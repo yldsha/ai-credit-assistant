@@ -1,0 +1,127 @@
+{
+  "_meta": {
+    "source": "alfabank.ru/sme — страницы продуктов и калькулятор «Рассчитаем кредит под вашу задачу»",
+    "collected_at": "2026-10-21",
+    "note": "Не оферта. rate_calc — ставка, которую показывает калькулятор банка; rate_base_from — базовая ставка со страницы продукта без скидок. Значения с пометкой assumption в notes не подтверждены калькулятором."
+  },
+  "products": [
+    {
+      "id": "loan_unsecured",
+      "name": "Кредит для бизнеса без залога",
+      "kind": "installment",
+      "payment": "annuity",
+      "amount_min": 300000,
+      "amount_max": 30000000,
+      "term_min_months": 12,
+      "term_max_months": 60,
+      "collateral": "forbidden",
+      "min_business_age_months": {"IP": 3, "OOO": 9},
+      "rate_calc": 19.0,
+      "rate_base_from": 23.5,
+      "purpose_fit": {
+        "equipment": 0.9, "development": 0.9, "refinancing": 0.8,
+        "working_capital": 0.6, "inventory": 0.4, "cash_gap": 0.2
+      },
+      "pitch": "Разовая сумма на развитие, без залога и поручителей для ИП",
+      "notes": "Лимиты и срок подтверждены калькулятором: от 300 тыс., не больше 5 лет."
+    },
+    {
+      "id": "loan_secured",
+      "name": "Кредит для бизнеса с залогом",
+      "kind": "installment",
+      "payment": "differentiated",
+      "amount_min": 500000,
+      "amount_max": 150000000,
+      "term_min_months": 12,
+      "term_max_months": 120,
+      "collateral": "required",
+      "collateral_types": ["real_estate", "vehicle", "equipment"],
+      "min_business_age_months": {"IP": 3, "OOO": 9},
+      "rate_calc": 17.0,
+      "rate_base_from": 21.5,
+      "purpose_fit": {
+        "equipment": 0.9, "development": 0.9, "real_estate": 0.8, "refinancing": 0.8,
+        "working_capital": 0.6, "inventory": 0.4, "cash_gap": 0.2
+      },
+      "pitch": "Крупная сумма на долгий срок, ставка ниже за счёт залога",
+      "notes": "Необеспеченная часть — до 50% суммы."
+    },
+    {
+      "id": "money_for_business",
+      "name": "Кредит «Деньги на дело»",
+      "kind": "installment",
+      "payment": "differentiated",
+      "amount_min": 500000,
+      "amount_max": 150000000,
+      "term_min_months": 12,
+      "term_max_months": 120,
+      "collateral": "required",
+      "collateral_types": ["real_estate", "vehicle"],
+      "min_business_age_months": {"IP": 0, "OOO": 0},
+      "rate_calc": 15.5,
+      "rate_base_from": 15.5,
+      "purpose_fit": {
+        "development": 0.8, "equipment": 0.8, "real_estate": 0.8, "working_capital": 0.7,
+        "refinancing": 0.7, "inventory": 0.5, "cash_gap": 0.3
+      },
+      "pitch": "Без финансовых документов, подходит молодому бизнесу — решение опирается на залог",
+      "notes": "amount_min — assumption: на странице не указан."
+    },
+    {
+      "id": "credit_line_unsecured",
+      "name": "Возобновляемая кредитная линия без залога",
+      "kind": "revolving",
+      "payment": "revolving",
+      "amount_min": 300000,
+      "amount_max": 30000000,
+      "term_min_months": null,
+      "term_max_months": null,
+      "collateral": "forbidden",
+      "min_business_age_months": {"IP": 3, "OOO": 9},
+      "rate_calc": 14.5,
+      "rate_base_from": 23.5,
+      "purpose_fit": {
+        "inventory": 1.0, "working_capital": 0.9, "cash_gap": 0.6,
+        "development": 0.3, "equipment": 0.2
+      },
+      "pitch": "Лимит один раз — берите частями, проценты только за использованное",
+      "notes": "Транш 1–6 мес. Калькулятор банка скрывает линию при сроке от 5 лет; мы срок для возобновляемых продуктов не проверяем."
+    },
+    {
+      "id": "overdraft",
+      "name": "Овердрафт",
+      "kind": "revolving",
+      "payment": "revolving",
+      "amount_min": 50000,
+      "amount_max": 20000000,
+      "term_min_months": null,
+      "term_max_months": null,
+      "collateral": "forbidden",
+      "min_business_age_months": {"IP": 3, "OOO": 9},
+      "rate_calc": 13.0,
+      "rate_base_from": 26.0,
+      "purpose_fit": {
+        "cash_gap": 1.0, "working_capital": 0.7, "inventory": 0.5
+      },
+      "pitch": "Запасной кошелёк к счёту: проценты только за дни пользования",
+      "notes": "rate_calc 13% — ставка с подпиской. Транш 60 дней, с подпиской до 90."
+    },
+    {
+      "id": "auto_loan",
+      "name": "Автокредит для бизнеса",
+      "kind": "installment",
+      "payment": "differentiated",
+      "amount_min": 300000,
+      "amount_max": 50000000,
+      "term_min_months": 12,
+      "term_max_months": 120,
+      "collateral": "purchased_asset",
+      "min_business_age_months": {"IP": 0, "OOO": 0},
+      "rate_calc": 17.5,
+      "rate_base_from": 17.5,
+      "purpose_fit": {"transport": 1.0},
+      "pitch": "Транспорт и спецтехника, новые и б/у, взнос от 0 ₽",
+      "notes": "Залогом служит покупаемый транспорт, поэтому отдельный залог не нужен. amount_min и возраст для ООО — assumption (на странице: «финансируем любой бизнес»)."
+    }
+  ]
+}
