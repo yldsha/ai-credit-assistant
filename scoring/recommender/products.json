@@ -81,8 +81,7 @@
       "rate_calc": 14.5,
       "rate_base_from": 23.5,
       "purpose_fit": {
-        "inventory": 1.0, "working_capital": 0.9, "cash_gap": 0.6,
-        "development": 0.3, "equipment": 0.2
+        "inventory": 1.0, "working_capital": 0.9, "cash_gap": 0.6
       },
       "pitch": "Лимит один раз — берите частями, проценты только за использованное",
       "notes": "Транш 1–6 мес. Калькулятор банка скрывает линию при сроке от 5 лет; мы срок для возобновляемых продуктов не проверяем."

@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 PRODUCTS_PATH = Path(__file__).with_name("products.json")
+MODEL_PATH = Path(__file__).with_name("model.joblib")
 
 PURPOSES = {
     "cash_gap": "кассовый разрыв, налоги, оплата поставщику",
@@ -121,6 +122,38 @@ def payment(req: Request, p: dict) -> dict:
     return {"type": "revolving", "monthly_interest_full_use": round(s * r)}
 
 
+_model = None
+
+
+def load_model(path: Path = MODEL_PATH):
+    global _model
+    if _model is None and path.exists():
+        import joblib
+        _model = joblib.load(path)
+    return _model
+
+
+def model_scores(req: Request, eligible_ids: list[str]) -> dict[str, float] | None:
+    model = load_model()
+    if model is None or not eligible_ids:
+        return None
+    import numpy as np
+    import pandas as pd
+    row = pd.DataFrame([{
+        "purpose": req.purpose,
+        "legal_form": req.legal_form,
+        "collateral_type": req.collateral_type or "none",
+        "log_amount": float(np.log(req.amount)),
+        "term_months": req.term_months,
+        "business_age_months": req.business_age_months,
+        "has_collateral": int(req.has_collateral),
+    }])
+    proba = dict(zip(model.classes_, model.predict_proba(row)[0]))
+    masked = {pid: proba.get(pid, 0.0) for pid in eligible_ids}
+    total = sum(masked.values()) or 1.0
+    return {pid: v / total for pid, v in masked.items()}
+
+
 def _label(score: float, rank: int) -> str:
     if score >= 0.8 and rank == 0:
         return "Лучший вариант"
@@ -157,7 +190,8 @@ def _suggestions(req: Request, products: list[dict]) -> list[str]:
     return tips
 
 
-def recommend(req: Request, products: list[dict] | None = None, top_k: int = 3) -> dict:
+def recommend(req: Request, products: list[dict] | None = None, top_k: int = 3,
+              use_model: bool = True) -> dict:
     products = products or load_products()
     eligible, excluded = [], []
 
@@ -168,26 +202,32 @@ def recommend(req: Request, products: list[dict] | None = None, top_k: int = 3) 
         else:
             excluded.append({"product_id": p["id"], "name": p["name"], "reasons": check.blockers})
 
-    eligible.sort(key=lambda t: t[0], reverse=True)
+    ml = model_scores(req, [p["id"] for _, p, _ in eligible]) if use_model else None
+    if ml:
+        eligible.sort(key=lambda t: (ml[t[1]["id"]], t[0]), reverse=True)
+    else:
+        eligible.sort(key=lambda t: t[0], reverse=True)
+
     recs = []
-    for i, (score, p, check) in enumerate(eligible[:top_k]):
+    for i, (fit, p, check) in enumerate(eligible[:top_k]):
         reasons = [r for r in [_purpose_reason(req, p), *check.reasons] if r]
         recs.append({
             "product_id": p["id"],
             "name": p["name"],
-            "label": _label(score, i),
-            "score": round(score, 2),
+            "label": _label(fit, i),
+            "score": round(ml[p["id"]] if ml else fit, 2),
+            "ranked_by": "model" if ml else "rules",
             "rate_from": p["rate_calc"],
             "payment": payment(req, p),
             "pitch": p["pitch"],
             "reasons": reasons,
         })
 
+    top_fit = eligible[0][0] if eligible else 0.0
     return {
         "recommendations": recs,
         "excluded": excluded,
-        "suggestions": (_suggestions(req, products)
-                        if not recs or recs[0]["score"] < WEAK_FIT else []),
+        "suggestions": _suggestions(req, products) if not recs or top_fit < WEAK_FIT else [],
     }
 
 
