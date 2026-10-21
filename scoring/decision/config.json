@@ -1,0 +1,13 @@
+{
+  "rules_version": "2026-10-21.1",
+  "manual_review_amount": 5000000,
+  "pd_approve_max": 0.05,
+  "pd_reject_min": 0.20,
+  "max_payment_to_income": 0.5,
+  "revolving_payoff_months": 12,
+  "stop_overdue_days": 90,
+  "soft_overdue_days": 30,
+  "max_inquiries_6m": 5,
+  "counter_offer_step": 10000,
+  "_note": "Черновые значения. Финальные пороги суммы и PD обосновывает Злата."
+}
