@@ -1,8 +1,8 @@
-
 from pathlib import Path
 
 import joblib
 import pandas as pd
+from catboost import Pool
 
 
 # Путь к обученной модели в той же папке, что и predict.py
@@ -85,3 +85,86 @@ def predict_pd(application: dict) -> float:
         raise ValueError(f"Некорректное значение PD: {pd_value}")
 
     return pd_value
+
+
+FEATURE_LABELS = {
+    "amount": "Сумма кредита",
+    "term_months": "Срок кредита",
+    "purpose": "Цель кредита",
+    "legal_form": "Организационно-правовая форма",
+    "has_collateral": "Наличие залога",
+    "collateral_type": "Тип залога",
+    "business_age_months": "Возраст бизнеса",
+    "annual_revenue": "Годовая выручка",
+    "monthly_turnover": "Ежемесячный оборот",
+    "monthly_expenses": "Ежемесячные расходы",
+    "existing_debt": "Текущая задолженность",
+    "monthly_debt_payments": "Ежемесячные платежи по долгам",
+    "overdue_days": "Дни просрочки",
+    "collateral_value": "Стоимость залога",
+    "industry": "Отрасль бизнеса",
+}
+
+
+def predict_with_explanation(
+    application: dict,
+    top_n: int = 5,
+) -> dict:
+    """
+    Возвращает вероятность дефолта и топ-N факторов SHAP.
+
+    Положительный вклад повышает выход модели, отрицательный — снижает.
+    Вклады измеряются в пространстве raw output CatBoost, не в процентах PD.
+    """
+    if top_n < 1:
+        raise ValueError("top_n должен быть не меньше 1")
+
+    # Проверяем заявку и получаем вероятность дефолта
+    pd_value = predict_pd(application)
+
+    X = pd.DataFrame(
+        [{feature: application[feature] for feature in FEATURES}],
+        columns=FEATURES,
+    )
+
+    for feature in CATEGORICAL_FEATURES:
+        X[feature] = X[feature].astype(str)
+
+    # CatBoost возвращает SHAP-вклады признаков и базовое значение
+    pool = Pool(
+        data=X,
+        cat_features=CATEGORICAL_FEATURES,
+        feature_names=FEATURES,
+    )
+
+    shap_values = model.get_feature_importance(
+        data=pool,
+        type="ShapValues",
+    )
+
+    contributions = shap_values[0][:-1]
+
+    ranked = sorted(
+        zip(FEATURES, contributions),
+        key=lambda item: abs(float(item[1])),
+        reverse=True,
+    )[:top_n]
+
+    risk_factors = [
+        {
+            "feature": feature,
+            "label": FEATURE_LABELS[feature],
+            "contribution": float(value),
+            "direction": (
+                "increases_risk" if value > 0
+                else "decreases_risk" if value < 0
+                else "neutral"
+            ),
+        }
+        for feature, value in ranked
+    ]
+
+    return {
+        "pd": pd_value,
+        "risk_factors": risk_factors,
+    }
