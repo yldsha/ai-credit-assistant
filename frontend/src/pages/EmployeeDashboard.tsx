@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { products, mockGetSystemSuggestions } from '../mocks/mockData'; // Импортируем новую функцию
+import { products, mockGetSystemSuggestions } from '../mocks/mockData';
 import {
   Search, Briefcase, PieChart, CheckCircle2, XCircle,
-  BarChart3, ShieldAlert, ArrowLeft, RefreshCw,
-  BrainCircuit, Target, TrendingUp, Building2, X, ChevronDown, RotateCcw, Sparkles, CreditCard, Zap
+  ShieldAlert, ArrowLeft, RefreshCw, FileText, Check, AlertTriangle,
+  BrainCircuit, Target, TrendingUp, Building2, X, ChevronDown, RotateCcw,
+  Sparkles, CreditCard, Zap, Clock, AlertOctagon
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import toast from 'react-hot-toast';
@@ -18,8 +19,13 @@ export default function EmployeeDashboard() {
   const [filter, setFilter] = useState('Все');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Стейты для панели решения
   const [comment, setComment] = useState('');
   const [altProductId, setAltProductId] = useState('');
+  const [altAmount, setAltAmount] = useState('');
+  const [altTerm, setAltTerm] = useState('');
+  const [needInfoText, setNeedInfoText] = useState('');
+  const [isNeedInfoOpen, setIsNeedInfoOpen] = useState(false);
 
   useEffect(() => {
     if (activeMenu === 'applications') setSelectedApp(null);
@@ -34,10 +40,14 @@ export default function EmployeeDashboard() {
     toast.success('Заявка взята в работу');
   };
 
+  // ПРАВКА ДАРЬИ: Комментарий обязателен при ЛЮБОМ решении.
+  // ПРАВКА ДАРЬИ: Возможность изменить сумму и срок для альтернативы.
   const handleDecision = (status: string) => {
     if (!selectedApp) return;
-    if (!comment.trim() && (status === 'Отказ' || status === 'Предложена альтернатива')) {
-      toast.error('Пожалуйста, оставьте комментарий для клиента');
+
+    // Проверка на обязательный комментарий для всех действий
+    if (!comment.trim() && status !== 'Нужна информация') {
+      toast.error('Пожалуйста, оставьте комментарий для клиента (обязательно при любом решении)');
       return;
     }
 
@@ -49,7 +59,12 @@ export default function EmployeeDashboard() {
         return;
       }
       const altProduct = products.find(p => p.id === altProductId);
-      updateData.alternativeProduct = altProduct;
+      // Сохраняем продукт вместе с новой суммой и сроком, если они указаны
+      updateData.alternativeProduct = {
+        ...altProduct,
+        amount: Number(altAmount) || selectedApp.amount,
+        term: Number(altTerm) || selectedApp.term
+      };
     }
 
     const updated = apps.map(a => {
@@ -66,10 +81,37 @@ export default function EmployeeDashboard() {
     setSelectedApp({ ...selectedApp, ...updateData });
     setComment('');
     setAltProductId('');
+    setAltAmount('');
+    setAltTerm('');
     toast.success(`Статус обновлен: ${status}`);
     localStorage.setItem('mock_apps', JSON.stringify(updated));
   };
 
+  const handleNeedInfo = () => {
+    if (!needInfoText.trim()) {
+      toast.error('Укажите, какие документы или информацию нужно запросить');
+      return;
+    }
+    const updated = apps.map(a => {
+      if (a.id === selectedApp.id) {
+        return {
+          ...a,
+          status: 'Нужна информация',
+          employeeComment: needInfoText,
+          timeline: a.timeline.map((t:any) => t.step === 'Решение' ? { ...t, date: `Запрошена информация`, done: true } : t)
+        };
+      }
+      return a;
+    });
+    setApps(updated);
+    setSelectedApp({ ...selectedApp, status: 'Нужна информация', employeeComment: needInfoText });
+    setNeedInfoText('');
+    setIsNeedInfoOpen(false);
+    toast.success('Запрос информации отправлен клиенту');
+    localStorage.setItem('mock_apps', JSON.stringify(updated));
+  };
+
+  // ЛОКАЛЬНАЯ СТАТИСТИКА (Вместо модуля в разработке)
   const filteredApps = apps.filter(a => {
     const matchesFilter = filter === 'Все' || a.status === filter;
     const searchLower = searchQuery.toLowerCase();
@@ -77,52 +119,78 @@ export default function EmployeeDashboard() {
       (a.company && a.company.toLowerCase().includes(searchLower)) ||
       (a.id && a.id.toLowerCase().includes(searchLower)) ||
       (a.inn && a.inn.includes(searchQuery));
-
     return matchesFilter && matchesSearch;
   });
 
   const renderStatistics = () => {
+    // Считаем личную статистику сотрудника на основе текущих заявок
+    const myApproved = apps.filter(a => a.status === 'Одобрено' && a.employeeComment).length;
+    const myRejected = apps.filter(a => a.status === 'Отказ').length;
+    const myNeedInfo = apps.filter(a => a.status === 'Нужна информация').length;
+    const myInProgress = apps.filter(a => a.status === 'В работе').length;
+    const autoApproved = apps.filter(a => a.status === 'Одобрено' && !a.employeeComment).length;
+
     const barData = [
-      { name: 'Одобрено', count: 45, fill: '#22c55e' },
-      { name: 'На рассмотрении', count: 12, fill: '#eab308' },
-      { name: 'Отказы', count: 8, fill: '#ef4444' },
+      { name: 'Одобрено мной', count: myApproved, fill: '#22c55e' },
+      { name: 'Отклонено', count: myRejected, fill: '#ef4444' },
+      { name: 'Запрошено инфо', count: myNeedInfo, fill: '#eab308' },
+      { name: 'Авто-решения', count: autoApproved, fill: '#3b82f6' },
     ];
 
     return (
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-8 max-w-6xl mx-auto space-y-6">
-        <h1 className="text-3xl font-extrabold text-slate-900">Аналитика и статистика</h1>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[
-            { title: 'Всего заявок', value: '65', icon: <Briefcase className="w-5 h-5 text-blue-500" />, bg: 'bg-blue-50' },
-            { title: 'Одобрено', value: '45', icon: <CheckCircle2 className="w-5 h-5 text-green-500" />, bg: 'bg-green-50' },
-            { title: 'Отказы', value: '8', icon: <XCircle className="w-5 h-5 text-red-500" />, bg: 'bg-red-50' },
-            { title: 'Средний риск', value: '0.34', icon: <ShieldAlert className="w-5 h-5 text-yellow-500" />, bg: 'bg-yellow-50' },
-          ].map((stat, i) => (
-            <Card key={i} className="p-5 flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${stat.bg}`}>{stat.icon}</div>
-              <div><p className="text-xs text-slate-500 font-medium">{stat.title}</p><p className="text-2xl font-extrabold text-slate-900">{stat.value}</p></div>
-            </Card>
-          ))}
+        <div>
+          <h1 className="text-3xl font-extrabold text-slate-900">Статистика</h1>
+          <p className="text-slate-500">Показатели вашей личной эффективности и работы конвейера</p>
         </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card className="p-5 border-l-4 border-blue-500 flex flex-col justify-between">
+            <div><p className="text-xs text-slate-500 font-medium mb-1">В работе у меня</p><p className="text-3xl font-extrabold text-slate-900">{myInProgress}</p></div>
+          </Card>
+          <Card className="p-5 border-l-4 border-green-500 flex flex-col justify-between">
+            <div><p className="text-xs text-slate-500 font-medium mb-1">Мной одобрено</p><p className="text-3xl font-extrabold text-slate-900">{myApproved}</p></div>
+          </Card>
+          <Card className="p-5 border-l-4 border-red-500 flex flex-col justify-between">
+            <div><p className="text-xs text-slate-500 font-medium mb-1">Мной отклонено</p><p className="text-3xl font-extrabold text-slate-900">{myRejected}</p></div>
+          </Card>
+          <Card className="p-5 border-l-4 border-slate-300 flex flex-col justify-between">
+            <div><p className="text-xs text-slate-500 font-medium mb-1">Среднее время</p><p className="text-3xl font-extrabold text-slate-900">1.5 <span className="text-lg text-slate-500">мин</span></p></div>
+          </Card>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Card className="p-6">
-            <h3 className="font-bold text-lg mb-6 flex items-center gap-2"><PieChart className="w-5 h-5" /> Распределение по статусам</h3>
+            <h3 className="font-bold text-lg mb-6 flex items-center gap-2"><PieChart className="w-5 h-5" /> Мои решения по заявкам</h3>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={barData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <YAxis axisLine={false} tickLine={false} />
+                  <YAxis axisLine={false} tickLine={false} allowDecimals={false} />
                   <Tooltip cursor={{ fill: 'transparent' }} />
                   <Bar dataKey="count" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </Card>
-          <Card className="p-6 flex flex-col items-center justify-center text-center">
-            <BarChart3 className="w-16 h-16 text-slate-300 mb-4" />
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Модуль в разработке</h3>
-            <p className="text-slate-500 text-sm max-w-sm">Здесь аналитик разместит расширенные дашборды.</p>
+
+          <Card className="p-6">
+            <h3 className="font-bold text-lg mb-6 flex items-center gap-2"><Clock className="w-5 h-5" /> Моя активность за неделю</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={[
+                  { day: 'Пн', count: 4 }, { day: 'Вт', count: 7 }, { day: 'Ср', count: 3 },
+                  { day: 'Чт', count: 9 }, { day: 'Пт', count: 5 }, { day: 'Сб', count: 1 }, { day: 'Вс', count: 0 }
+                ]}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="day" axisLine={false} tickLine={false} />
+                  <YAxis axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip cursor={{ fill: 'transparent' }} />
+                  <Bar dataKey="count" fill="#EF3124" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </Card>
         </div>
       </motion.div>
@@ -135,27 +203,40 @@ export default function EmployeeDashboard() {
     const isActionRequired = selectedApp.status === 'Новая' || selectedApp.status === 'На рассмотрении';
     const isInProgress = selectedApp.status === 'В работе';
 
-    // Получаем умные рекомендации (текст + продукты)
+    // ПРАВКА ДАРЬИ: Автоматическое одобрение системой (если нет комментария сотрудника)
+    const isAutoApproved = selectedApp.status === 'Одобрено' && !selectedApp.employeeComment;
+
+    // Умные рекомендации для сотрудника
     const systemSuggestions = mockGetSystemSuggestions(selectedApp);
 
     return (
       <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="max-w-6xl mx-auto space-y-6 pb-10 p-8">
-
         <button onClick={() => setSelectedApp(null)} className="text-slate-500 hover:text-alfa flex items-center gap-2 text-sm font-bold transition mb-2">
           <ArrowLeft className="w-4 h-4"/> Назад к списку заявок
         </button>
 
+        {/* Шапка заявки */}
         <div className="flex justify-between items-start bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
           <div>
-            <h1 className="text-3xl font-extrabold text-slate-900 mb-2">Заявка № {selectedApp.id}</h1>
-            <p className="text-slate-500 font-medium text-lg">{selectedApp.company} {selectedApp.isManual && <Badge variant="danger" className="ml-2">Индивидуальная</Badge>}</p>
+            <div className="flex items-center gap-3 mb-1">
+              <h1 className="text-3xl font-extrabold text-slate-900">Заявка № {selectedApp.id}</h1>
+              {selectedApp.isManual && <Badge variant="danger">Индивидуальная</Badge>}
+              {isAutoApproved && <Badge variant="success">Одобрено системой</Badge>}
+            </div>
+            <p className="text-slate-500 font-medium text-lg">{selectedApp.company}</p>
             <p className="text-sm text-slate-400 mt-1">Создана {selectedApp.date} • ИНН: {selectedApp.inn}</p>
           </div>
-          <Badge variant={selectedApp.status === 'Одобрено' ? 'success' : selectedApp.status === 'Отказ' ? 'danger' : selectedApp.status === 'В работе' ? 'warning' : 'info'} className="text-sm px-4 py-2">
+          <Badge variant={
+            selectedApp.status === 'Одобрено' ? 'success' :
+            selectedApp.status === 'Отказ' ? 'danger' :
+            selectedApp.status === 'В работе' ? 'warning' :
+            selectedApp.status === 'Нужна информация' ? 'info' : 'default'
+          } className="text-sm px-4 py-2">
             {selectedApp.status}
           </Badge>
         </div>
 
+        {/* Параметры заявки */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card className="p-4"><p className="text-xs text-slate-500 mb-1">Сумма</p><p className="font-extrabold text-xl">{selectedApp.amount?.toLocaleString()} ₽</p></Card>
           <Card className="p-4"><p className="text-xs text-slate-500 mb-1">Продукт</p><p className="font-bold text-base truncate">{selectedApp.product}</p></Card>
@@ -164,6 +245,8 @@ export default function EmployeeDashboard() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+
+          {/* ЛЕВАЯ КОЛОНКА: Данные компании, Финансы и Проверки */}
           <div className="lg:col-span-2 space-y-6">
             <Card className="p-6">
               <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Building2 className="w-5 h-5"/> Информация о компании</h3>
@@ -183,41 +266,100 @@ export default function EmployeeDashboard() {
                 <div className="flex justify-between border-b border-slate-50 pb-2"><span className="text-slate-500">Обязательства</span><span className="font-medium">{(selectedApp.liabilities || 2000000).toLocaleString()} ₽</span></div>
               </div>
             </Card>
+
+            {/* ПРАВКА ДАРЬИ: Проверка во внешних источниках */}
+            <Card className="p-6 border-t-4 border-slate-300">
+              <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><FileText className="w-5 h-5"/> Проверка во внешних источниках</h3>
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-700 font-medium">ЕГРЮЛ (Статус компании)</span>
+                  {selectedApp.external_checks?.egrul === 'active' ? (
+                    <span className="text-green-600 font-bold flex items-center gap-1 bg-green-50 px-2 py-1 rounded-md"><Check className="w-4 h-4"/> Действует</span>
+                  ) : (
+                    <span className="text-red-600 font-bold flex items-center gap-1 bg-red-50 px-2 py-1 rounded-md"><X className="w-4 h-4"/> Ликвидация</span>
+                  )}
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-700 font-medium">ФНС (Налоговая задолженность)</span>
+                  {selectedApp.external_checks?.fns === 'no_debt' ? (
+                    <span className="text-green-600 font-bold flex items-center gap-1 bg-green-50 px-2 py-1 rounded-md"><Check className="w-4 h-4"/> Нет долгов</span>
+                  ) : (
+                    <span className="text-red-600 font-bold flex items-center gap-1 bg-red-50 px-2 py-1 rounded-md"><AlertTriangle className="w-4 h-4"/> Есть долг</span>
+                  )}
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-700 font-medium">БКИ (Кредитная история)</span>
+                  {selectedApp.external_checks?.bki === 'ok' ? (
+                    <span className="text-green-600 font-bold flex items-center gap-1 bg-green-50 px-2 py-1 rounded-md"><Check className="w-4 h-4"/> Без просрочек</span>
+                  ) : (
+                    <span className="text-red-600 font-bold flex items-center gap-1 bg-red-50 px-2 py-1 rounded-md"><AlertTriangle className="w-4 h-4"/> Просрочка</span>
+                  )}
+                </div>
+              </div>
+            </Card>
           </div>
 
-          <div className="lg:col-span-1">
+          {/* ПРАВАЯ КОЛОНКА: Оценка риска и SHAP-факторы */}
+          <div className="lg:col-span-1 space-y-6">
             <Card className="p-6 border-t-4 border-indigo-500 relative overflow-hidden bg-white shadow-sm h-full">
               <div className="absolute top-2 right-2 opacity-5"><BrainCircuit className="w-24 h-24"/></div>
               <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Target className="w-5 h-5"/> Оценка риска (ML)</h3>
               <div className="mb-6 relative z-10">
-                <p className="text-xs text-slate-500 mb-1">Вероятность дефолта</p>
+                <p className="text-xs text-slate-500 mb-1">Вероятность дефолта (PD)</p>
                 <div className="flex items-end gap-3">
-                  <span className={`text-5xl font-extrabold ${selectedApp.riskScore > 0.5 ? 'text-red-500' : 'text-green-500'}`}>
+                  <span className={`text-5xl font-extrabold ${selectedApp.riskScore > 0.15 ? 'text-red-500' : 'text-green-500'}`}>
                     {selectedApp.riskScore?.toFixed(2)}
                   </span>
-                  <span className={`px-2 py-1 rounded text-xs font-bold mb-2 ${selectedApp.riskScore > 0.5 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
-                    {selectedApp.riskScore > 0.5 ? 'Высокий риск' : 'Низкий риск'}
+                  <span className={`px-2 py-1 rounded text-xs font-bold mb-2 ${selectedApp.riskScore > 0.15 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                    {selectedApp.riskScore > 0.15 ? 'Высокий риск' : 'Низкий риск'}
                   </span>
                 </div>
                 <div className="w-full bg-slate-100 h-2 rounded-full mt-3 overflow-hidden">
-                  <div className={`h-full ${selectedApp.riskScore > 0.5 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${selectedApp.riskScore * 100}%` }} />
+                  <div className={`h-full ${selectedApp.riskScore > 0.15 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${selectedApp.riskScore * 100}%` }} />
+                </div>
+              </div>
+
+              {/* ПРАВКА ДАРЬИ: Ключевые факторы риска (SHAP) */}
+              <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 mb-6 relative z-10">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Ключевые факторы риска</p>
+                <div className="space-y-2 text-sm">
+                  {selectedApp.risk_factors && selectedApp.risk_factors.length > 0 ? (
+                    selectedApp.risk_factors.map((factor: any, i: number) => (
+                      <div key={i} className="flex justify-between items-center">
+                        <span className="text-slate-700 text-xs">{factor.name}</span>
+                        <span className={`font-bold text-xs ${factor.direction === 'up' ? 'text-red-500' : 'text-green-500'}`}>
+                          {factor.direction === 'up' ? 'Повышает риск' : 'Снижает риск'}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-slate-500">Факторов риска не выявлено</p>
+                  )}
                 </div>
               </div>
 
               <div className="bg-indigo-50 rounded-xl p-4 relative z-10 border border-indigo-100">
-                <p className="text-xs text-indigo-800 font-bold mb-2 uppercase tracking-wider">Мнение системы</p>
-                <p className="font-extrabold text-indigo-900 text-xl mb-2">
-                  {selectedApp.mlRecommendation || (selectedApp.riskScore > 0.5 ? 'Склоняется к отказу' : 'Склоняется к одобрению')}
+                <p className="text-xs text-indigo-800 font-bold mb-2 uppercase tracking-wider">Рекомендация системы</p>
+                <p className="font-extrabold text-indigo-900 text-lg mb-2">
+                  {selectedApp.mlRecommendation || (selectedApp.riskScore > 0.15 ? 'Склоняется к отказу' : 'Склоняется к одобрению')}
                 </p>
               </div>
             </Card>
           </div>
         </div>
 
-        {/* БЛОК ПРИНЯТИЯ РЕШЕНИЯ НА ВСЮ ШИРИНУ (ВНИЗУ) */}
+        {/* ПАНЕЛЬ ПРИНЯТИЯ РЕШЕНИЯ */}
         <div className="mt-8">
-          {isActionRequired ? (
-            <Card className="p-10 text-center bg-slate-900 text-white shadow-xl border-none">
+          {isAutoApproved ? (
+             <Card className="p-8 text-center bg-green-50 border border-green-200 shadow-sm rounded-3xl">
+               <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-4"/>
+               <h3 className="font-bold text-2xl mb-2 text-green-800">Заявка одобрена автоматически</h3>
+               <p className="text-slate-600 max-w-lg mx-auto">
+                 Система приняла решение без участия человека, так как риск (PD) ниже 5% и сумма не превышает 3 млн ₽.
+               </p>
+             </Card>
+          ) : isActionRequired ? (
+            <Card className="p-10 text-center bg-slate-900 text-white shadow-xl border-none rounded-3xl">
               <ShieldAlert className="w-16 h-16 text-yellow-500 mx-auto mb-4"/>
               <h3 className="font-bold text-2xl mb-2">Требуется ваше решение</h3>
               <p className="text-base text-slate-400 mb-8 max-w-lg mx-auto">Возьмите заявку в работу, чтобы изучить детали и принять финальное решение.</p>
@@ -226,14 +368,14 @@ export default function EmployeeDashboard() {
               </Button>
             </Card>
           ) : isInProgress ? (
-            <Card className="p-8 border-2 border-slate-200 shadow-lg bg-white">
+            <Card className="p-8 border-2 border-slate-200 shadow-lg bg-white rounded-3xl">
               <h3 className="font-bold text-2xl mb-6">Принятие решения</h3>
 
-              {/* НОВЫЙ КРАСИВЫЙ БЛОК УМНЫХ РЕКОМЕНДАЦИЙ */}
+              {/* Умные рекомендации */}
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-6 rounded-2xl mb-8">
                 <div className="flex items-center gap-2 mb-3">
                   <Sparkles className="w-5 h-5 text-blue-600" />
-                  <h4 className="font-bold text-blue-900 text-lg">Умные рекомендации</h4>
+                  <h4 className="font-bold text-blue-900 text-lg">Умные рекомендации от системы</h4>
                 </div>
                 <p className="text-sm text-blue-800 mb-5 font-medium">{systemSuggestions.advice}</p>
 
@@ -260,9 +402,8 @@ export default function EmployeeDashboard() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-6">
                   <div className="bg-slate-50 p-5 rounded-xl border border-slate-200">
-                    <label className="text-sm font-bold text-slate-700 mb-2 block">Выбранный продукт для альтернативы</label>
-                    {/* КРАСИВЫЙ СЕЛЕКТ */}
-                    <div className="relative">
+                    <label className="text-sm font-bold text-slate-700 mb-2 block">Предложить альтернативу?</label>
+                    <div className="relative mb-3">
                       <select
                         className="w-full p-4 bg-white border border-slate-300 rounded-xl text-base outline-none focus:ring-2 focus:ring-alfa transition appearance-none pr-12"
                         value={altProductId}
@@ -273,38 +414,58 @@ export default function EmployeeDashboard() {
                       </select>
                       <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
                     </div>
+
+                    {/* ПРАВКА ДАРЬИ: Возможность изменить сумму и срок */}
+                    {altProductId && (
+                      <div className="grid grid-cols-2 gap-3 mt-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                        <div>
+                          <label className="text-xs text-slate-500 mb-1 block">Новая сумма (₽)</label>
+                          <input type="number" placeholder={selectedApp.amount} value={altAmount} onChange={e => setAltAmount(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm"/>
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-500 mb-1 block">Новый срок (мес.)</label>
+                          <input type="number" placeholder={selectedApp.term} value={altTerm} onChange={e => setAltTerm(e.target.value)} className="w-full p-2 border border-slate-200 rounded-lg text-sm"/>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="flex flex-col gap-4">
-                    <Button variant="success" className="w-full bg-green-500 hover:bg-green-600 py-5 text-xl shadow-lg shadow-green-500/20" onClick={() => handleDecision('Одобрено')}>
-                      <CheckCircle2 className="w-6 h-6 mr-3" /> Одобрить
+                  <div className="flex flex-col gap-3">
+                    <Button variant="success" className="w-full bg-green-500 hover:bg-green-600 py-4 text-lg shadow-lg shadow-green-500/20" onClick={() => handleDecision('Одобрено')}>
+                      <CheckCircle2 className="w-5 h-5 mr-2" /> Одобрить текущую заявку
                     </Button>
+
                     {altProductId && (
-                      <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white py-5 text-xl" onClick={() => handleDecision('Предложена альтернатива')}>
-                        <RefreshCw className="w-6 h-6 mr-3" /> Отправить альтернативу
+                      <Button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-4 text-lg" onClick={() => handleDecision('Предложена альтернатива')}>
+                        <RefreshCw className="w-5 h-5 mr-2" /> Отправить альтернативу
                       </Button>
                     )}
-                    <Button variant="secondary" className="w-full bg-white text-red-600 border-2 border-red-100 hover:bg-red-50 py-5 text-xl" onClick={() => handleDecision('Отказ')}>
-                      <XCircle className="w-6 h-6 mr-3" /> Отказать
+
+                    <Button variant="secondary" className="w-full bg-yellow-100 text-yellow-800 hover:bg-yellow-200 py-4 text-lg border-none" onClick={() => setIsNeedInfoOpen(true)}>
+                      <AlertOctagon className="w-5 h-5 mr-2" /> Запросить информацию у клиента
+                    </Button>
+
+                    <Button variant="secondary" className="w-full bg-white text-red-600 border-2 border-red-100 hover:bg-red-50 py-4 text-lg" onClick={() => handleDecision('Отказ')}>
+                      <XCircle className="w-5 h-5 mr-2" /> Отказать
                     </Button>
                   </div>
                 </div>
 
                 <div className="flex flex-col h-full">
-                  <label className="text-sm font-bold text-slate-700 mb-2 block">Комментарий для клиента</label>
+                  <label className="text-sm font-bold text-slate-700 mb-2 block">Комментарий для клиента (обязательно)</label>
                   <textarea
-                    placeholder="Опишите причину отказа или условия альтернативы..."
+                    placeholder="Опишите причину отказа, условия альтернативы или решение по заявке..."
                     value={comment}
                     onChange={e => setComment(e.target.value)}
                     className="w-full flex-1 p-4 bg-slate-50 border border-slate-200 rounded-xl text-base resize-none outline-none focus:ring-2 focus:ring-slate-300 mb-2"
                   />
-                  <p className="text-xs text-slate-400">Обязательно при отказе или отправке альтернативы.</p>
+                  <p className="text-xs text-slate-400">Комментарий сохраняется в истории заявки и отправляется клиенту.</p>
                 </div>
               </div>
             </Card>
           ) : (
-            <Card className="p-10 text-center bg-slate-100 border-none shadow-sm">
-              <CheckCircle2 className={`w-20 h-20 mx-auto mb-4 ${selectedApp.status === 'Одобрено' ? 'text-green-500' : 'text-red-500'}`} />
+            <Card className="p-10 text-center bg-slate-100 border-none shadow-sm rounded-3xl">
+              <CheckCircle2 className={`w-20 h-20 mx-auto mb-4 ${selectedApp.status === 'Одобрено' ? 'text-green-500' : selectedApp.status === 'Нужна информация' ? 'text-yellow-500' : 'text-red-500'}`} />
               <h3 className="font-bold text-2xl mb-2">Решение принято</h3>
               <p className="font-bold text-slate-600 text-xl mb-6">Статус: {selectedApp.status}</p>
 
@@ -356,7 +517,7 @@ export default function EmployeeDashboard() {
                 <div className="flex justify-between items-center mb-6">
                   <div>
                     <h1 className="text-3xl font-extrabold text-slate-900 mb-1">Рабочий стол</h1>
-                    <p className="text-slate-500">Заявки на кредиты МСБ</p>
+                    <p className="text-slate-500">Все входящие заявки на кредиты МСБ</p>
                   </div>
 
                   <div className="relative w-80">
@@ -376,9 +537,9 @@ export default function EmployeeDashboard() {
                   </div>
                 </div>
 
-                <div className="flex gap-2 mb-6">
-                  {['Все', 'Новая', 'На рассмотрении', 'В работе', 'Одобрено', 'Отказ'].map(f => (
-                    <button key={f} onClick={() => setFilter(f)} className={`px-4 py-2 rounded-lg text-sm font-bold transition shadow-sm ${filter === f ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'}`}>
+                <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
+                  {['Все', 'Новая', 'На рассмотрении', 'В работе', 'Нужна информация', 'Одобрено', 'Отказ'].map(f => (
+                    <button key={f} onClick={() => setFilter(f)} className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition shadow-sm ${filter === f ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'}`}>
                       {f} {f === 'Все' && <span className="ml-1 opacity-60">{apps.length}</span>}
                     </button>
                   ))}
@@ -391,6 +552,7 @@ export default function EmployeeDashboard() {
                         <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">№ Заявки</th>
                         <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Компания</th>
                         <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Сумма</th>
+                        <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Риск (ML)</th>
                         <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Статус</th>
                         <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Действие</th>
                       </tr>
@@ -398,7 +560,7 @@ export default function EmployeeDashboard() {
                     <tbody className="divide-y divide-slate-100">
                       {filteredApps.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="p-8 text-center text-slate-500">По вашему запросу ничего не найдено</td>
+                          <td colSpan={6} className="p-8 text-center text-slate-500">По вашему запросу ничего не найдено</td>
                         </tr>
                       ) : (
                         filteredApps.map(app => (
@@ -406,8 +568,14 @@ export default function EmployeeDashboard() {
                             <td className="p-4 font-bold text-slate-900">{app.id}</td>
                             <td className="p-4 font-medium">{app.company}</td>
                             <td className="p-4 font-bold">{app.amount?.toLocaleString()} ₽</td>
+                            <td className="p-4 font-bold text-slate-500">{app.riskScore?.toFixed(2)}</td>
                             <td className="p-4">
-                              <Badge variant={app.status === 'Одобрено' ? 'success' : app.status === 'Отказ' ? 'danger' : app.status === 'Новая' ? 'info' : app.status === 'В работе' ? 'warning' : 'default'}>{app.status}</Badge>
+                              <Badge variant={
+                                app.status === 'Одобрено' ? 'success' :
+                                app.status === 'Отказ' ? 'danger' :
+                                app.status === 'Новая' ? 'info' :
+                                app.status === 'В работе' ? 'warning' : 'default'
+                              }>{app.status}</Badge>
                             </td>
                             <td className="p-4 text-right text-alfa font-bold text-sm">Открыть</td>
                           </tr>
@@ -427,6 +595,28 @@ export default function EmployeeDashboard() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Модалка для запроса информации */}
+      <AnimatePresence>
+        {isNeedInfoOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <Card className="w-full max-w-md p-6 bg-white">
+              <h3 className="font-bold text-xl mb-4">Запросить информацию</h3>
+              <p className="text-sm text-slate-500 mb-4">Укажите, какие документы или сведения необходимы клиенту.</p>
+              <textarea
+                className="w-full p-3 border border-slate-200 rounded-xl h-32 outline-none mb-4"
+                placeholder="Например: Приложите актуальную выписку по расчетному счету за последние 3 месяца."
+                value={needInfoText}
+                onChange={e => setNeedInfoText(e.target.value)}
+              />
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => setIsNeedInfoOpen(false)}>Отмена</Button>
+                <Button className="bg-yellow-500 hover:bg-yellow-600 text-white" onClick={handleNeedInfo}>Отправить запрос</Button>
+              </div>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

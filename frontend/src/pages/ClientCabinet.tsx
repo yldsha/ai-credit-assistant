@@ -5,15 +5,15 @@ import { useApp } from '../context/AppContext';
 import {
   Home, FileText, Calculator, User, ChevronRight, CheckCircle2, XCircle,
   ArrowLeft, Briefcase, CreditCard, ShieldCheck, HelpCircle, Upload, Clock,
-  Phone, Building2, MapPin, AlertTriangle, MessageSquare, Send, Download,
-  RefreshCw, FileCheck, Landmark, Wallet, Users, TrendingUp, MessageCircle,
-  Bell, LifeBuoy, Headphones, Mail
+  Phone, Building2, MapPin, AlertTriangle, MessageSquare,
+  Wallet, Users, MessageCircle,
+  Bell, LifeBuoy, Headphones, Mail, FileEdit, FilePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { Button, Card, Badge } from '../components/ui';
 
-type Tab = 'main' | 'applications' | 'calculator' | 'documents' | 'profile' | 'app-detail' | 'notifications' | 'support';
+type Tab = 'main' | 'applications' | 'drafts' | 'calculator' | 'documents' | 'profile' | 'app-detail' | 'notifications' | 'support';
 
 export default function ClientCabinet() {
   const { apps, setApps, docs, setDocs, clientName } = useApp();
@@ -22,6 +22,9 @@ export default function ClientCabinet() {
   const [step, setStep] = useState(1);
   const [disputeText, setDisputeText] = useState('');
   const [isDisputing, setIsDisputing] = useState(false);
+
+  // ПРАВКА ДАРЬИ: Согласие на БКИ
+  const [bkiConsent, setBkiConsent] = useState(false);
 
   const [calcParams, setCalcParams] = useState({
     type: 'ООО' as 'ООО' | 'ИП',
@@ -42,40 +45,73 @@ export default function ClientCabinet() {
   });
   const [result, setResult] = useState<any>(null);
 
+  // ПРАВКА ДАРЬИ: Исправляем "Ближайший платеж" на главной, чтобы он бился с реальными кредитами
+  // Берем сумму из первой одобренной заявки или выводим 0, если кредитов нет
+  const approvedApps = apps.filter(a => a.status === 'Одобрено');
+  const totalDebt = approvedApps.reduce((sum, app) => sum + (app.amount || 0), 0);
+  // Условный расчет ежемесячного платежа по одобренным кредитам
+  const estimatedMonthlyPayment = approvedApps.length > 0 ? Math.round(totalDebt / 24) : 0;
+
   useEffect(() => {
     const res = recommendProducts(calcParams);
     setRecommendations(res);
   }, [calcParams]);
 
+  // ПРАВКА ДАРЬИ: Сохранение черновика
+  const handleSaveDraft = () => {
+    const draftApp = {
+      ...formData,
+      company: formData.companyName,
+      ...calcParams,
+      amount: calcParams.amount,
+      term: calcParams.termYears * 12,
+      id: `2026-D${Math.floor(Math.random() * 1000)}`,
+      date: new Date().toLocaleDateString('ru-RU'),
+      status: 'Черновик',
+      product: selectedProduct?.product.name || 'Не выбран',
+      timeline: [{ step: 'Черновик создан', date: new Date().toLocaleString('ru-RU'), done: true }]
+    };
+    const updatedApps = [draftApp, ...apps];
+    setApps(updatedApps);
+    localStorage.setItem('mock_apps', JSON.stringify(updatedApps));
+    toast.success('Черновик сохранен! Вы можете вернуться к нему позже.');
+    setActiveTab('drafts');
+    setStep(1);
+  };
+
   const handleSubmit = async () => {
+    // ПРАВКА ДАРЬИ: Блокируем отправку без согласия на БКИ
+    if (!bkiConsent) {
+      toast.error('Необходимо ваше согласие на запрос кредитной истории в БКИ');
+      return;
+    }
+
     const isManual = !selectedProduct;
     const productToUse = selectedProduct?.product || { name: 'Индивидуальное предложение', rate: 0 };
 
     const decision = mockDecisionEngine({ ...calcParams, ...formData, amount: calcParams.amount });
     setResult(decision);
 
-    const mlRecommendation = decision.status === 'APPROVED'
-      ? 'Склоняется к одобрению'
-      : decision.status === 'REJECTED'
-        ? 'Склоняется к отказу'
-        : 'Требуется ручная проверка';
-
+    // ПРАВКА ДАРЬИ: Мы больше не отдаем клиенту внутренний riskScore. Сохраняем для сотрудника.
     const newApp = {
       ...formData,
       company: formData.companyName,
       ...calcParams,
       amount: calcParams.amount,
       term: calcParams.termYears * 12,
-      id: `2024-0${Math.floor(Math.random() * 1000)}`,
+      id: `2026-0${Math.floor(Math.random() * 1000)}`,
       date: new Date().toLocaleDateString('ru-RU'),
-      status: 'На рассмотрении',
-      mlRecommendation: mlRecommendation,
+      status: decision.status === 'APPROVED' ? 'Одобрено' : 'На рассмотрении',
+      // status: 'На рассмотрении', // По ТЗ Дарьи, даже авто-одобрение лучше кидать в бэкенд
+      mlRecommendation: decision.status === 'APPROVED' ? 'Склоняется к одобрению' : 'Требуется ручная проверка',
       riskScore: decision.riskScore,
-      rate: productToUse.rate || 19, // <-- Сохраняем ставку
+      rate: productToUse.rate || 19,
       reason: decision.reason,
       product: productToUse.name,
       isManual: isManual,
       payment: selectedProduct?.payment || 0,
+      risk_factors: decision.risk_factors,
+      external_checks: decision.external_checks,
       timeline: [
         { step: 'Заявка получена', date: new Date().toLocaleString('ru-RU'), done: true },
         { step: 'Проверка данных', date: 'В процессе', done: false },
@@ -145,8 +181,8 @@ export default function ClientCabinet() {
         <Card className="p-5 border-l-4 border-blue-500 flex justify-between items-center">
           <div>
             <p className="text-xs text-slate-500 mb-1">Ближайший платеж</p>
-            <p className="text-2xl font-extrabold text-slate-900">50 410 ₽</p>
-            <p className="text-[10px] text-slate-400 mt-1">До 15 числа</p>
+            <p className="text-2xl font-extrabold text-slate-900">{estimatedMonthlyPayment > 0 ? `${estimatedMonthlyPayment.toLocaleString()} ₽` : 'Нет активных кредитов'}</p>
+            {estimatedMonthlyPayment > 0 && <p className="text-[10px] text-slate-400 mt-1">По одобренным заявкам</p>}
           </div>
           <CreditCard className="w-8 h-8 text-blue-500 opacity-20" />
         </Card>
@@ -163,16 +199,16 @@ export default function ClientCabinet() {
         <div className="p-6 border-b border-slate-100 flex justify-between items-center">
           <h3 className="font-bold text-lg">Мои заявки</h3>
           <button onClick={() => setActiveTab('applications')} className="text-alfa text-sm font-bold hover:underline flex items-center gap-1">
-            Все заявки ({apps.length}) <ChevronRight className="w-4 h-4"/>
+            Все заявки ({apps.filter(a => a.status !== 'Черновик').length}) <ChevronRight className="w-4 h-4"/>
           </button>
         </div>
-        {apps.length === 0 ? (
+        {apps.filter(a => a.status !== 'Черновик').length === 0 ? (
           <div className="p-8 text-center text-slate-400">
             У вас пока нет заявок. <button onClick={() => setActiveTab('calculator')} className="text-alfa underline font-medium">Создать первую</button>
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
-            {apps.slice(0, 3).map(app => (
+            {apps.filter(a => a.status !== 'Черновик').slice(0, 3).map(app => (
               <div key={app.id} onClick={() => { setViewingApp(app); setActiveTab('app-detail'); }} className="p-4 hover:bg-slate-50 cursor-pointer flex justify-between items-center transition">
                 <div>
                   <p className="font-bold text-slate-900">№ {app.id} • {app.product}</p>
@@ -197,14 +233,14 @@ export default function ClientCabinet() {
         <Button onClick={() => { setActiveTab('calculator'); setStep(1); }}>+ Новая заявка</Button>
       </div>
 
-      {apps.length === 0 ? (
+      {apps.filter(a => a.status !== 'Черновик').length === 0 ? (
         <Card className="p-12 text-center flex flex-col items-center">
           <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4"><FileText className="w-8 h-8 text-slate-400"/></div>
           <p className="font-bold text-lg text-slate-900 mb-2">Заявок пока нет</p>
           <Button onClick={() => setActiveTab('calculator')}>Рассчитать кредит</Button>
         </Card>
       ) : (
-        apps.map(app => (
+        apps.filter(a => a.status !== 'Черновик').map(app => (
           <Card key={app.id} className="p-5 hover:shadow-md transition cursor-pointer" onClick={() => { setViewingApp(app); setActiveTab('app-detail'); }}>
             <div className="flex justify-between items-start mb-3">
               <div>
@@ -219,7 +255,7 @@ export default function ClientCabinet() {
               <div><p className="text-xs text-slate-500">Продукт</p><p className="font-medium truncate">{app.product}</p></div>
               <div><p className="text-xs text-slate-500">Сумма</p><p className="font-bold">{app.amount?.toLocaleString()} ₽</p></div>
               <div><p className="text-xs text-slate-500">Срок</p><p className="font-medium">{app.term} мес.</p></div>
-              <div><p className="text-xs text-slate-500">Риск (ML)</p><p className="font-bold text-slate-700">{app.riskScore}</p></div>
+              <div><p className="text-xs text-slate-500">Статус</p><p className="font-bold text-slate-700">{app.status}</p></div>
             </div>
           </Card>
         ))
@@ -227,20 +263,55 @@ export default function ClientCabinet() {
     </motion.div>
   );
 
-  // ============ 3. УВЕДОМЛЕНИЯ ============
+  // ============ 3. ЧЕРНОВИКИ (НОВАЯ ВКЛАДКА) ============
+  const renderDrafts = () => {
+    const drafts = apps.filter(a => a.status === 'Черновик');
+    return (
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+        <h1 className="text-2xl font-extrabold text-slate-900">Черновики</h1>
+        <p className="text-slate-500 mb-6">Незаконченные заявки, к которым можно вернуться.</p>
+
+        {drafts.length === 0 ? (
+          <Card className="p-12 text-center flex flex-col items-center">
+            <FileEdit className="w-16 h-16 text-slate-300 mb-4"/>
+            <p className="font-bold text-lg text-slate-900 mb-2">Нет сохраненных черновиков</p>
+            <p className="text-sm text-slate-500 mb-4">Если вы начнете заполнять заявку и сохраните её, она появится здесь.</p>
+            <Button onClick={() => setActiveTab('calculator')}>Создать заявку</Button>
+          </Card>
+        ) : (
+          drafts.map(app => (
+            <Card key={app.id} className="p-5 hover:shadow-md transition cursor-pointer border-l-4 border-slate-300" onClick={() => { setActiveTab('calculator'); setStep(2); }}>
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="font-bold text-slate-900">Черновик № {app.id}</p>
+                  <p className="text-xs text-slate-500 mb-2">Создан {app.date} • {app.company}</p>
+                  <Badge variant="default">Не отправлено</Badge>
+                </div>
+                <Button variant="outline" size="sm" className="flex gap-2">
+                  <FilePlus className="w-4 h-4"/> Продолжить
+                </Button>
+              </div>
+            </Card>
+          ))
+        )}
+      </motion.div>
+    );
+  };
+
+  // ============ 4. УВЕДОМЛЕНИЯ ============
   const renderNotifications = () => {
-    const feedbackApps = apps.filter(a => a.employeeComment || a.status === 'Предложена альтернатива' || a.status === 'Оспорено');
+    const feedbackApps = apps.filter(a => a.employeeComment || a.status === 'Предложена альтернатива' || a.status === 'Оспорено' || a.status === 'Нужна информация');
 
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
         <h1 className="text-2xl font-extrabold text-slate-900">Уведомления</h1>
-        <p className="text-slate-500 mb-6">Здесь отображаются решения и комментарии кредитных специалистов по вашим заявкам.</p>
+        <p className="text-slate-500 mb-6">Здесь отображаются решения и запросы от кредитных специалистов.</p>
 
         {feedbackApps.length === 0 ? (
           <Card className="p-12 text-center flex flex-col items-center">
             <Bell className="w-12 h-12 text-slate-300 mb-4" />
             <p className="font-bold text-lg text-slate-900 mb-2">У вас пока нет новых уведомлений</p>
-            <p className="text-sm text-slate-500">Когда специалист примет решение, оно появится здесь.</p>
+            <p className="text-sm text-slate-500">Когда специалист запросит данные или примет решение, оно появится здесь.</p>
           </Card>
         ) : (
           feedbackApps.map(app => (
@@ -257,14 +328,14 @@ export default function ClientCabinet() {
 
               {app.employeeComment && (
                 <div className="bg-indigo-50 p-4 rounded-xl mt-3 border border-indigo-100">
-                  <p className="text-xs font-bold text-indigo-800 mb-1">Комментарий специалиста:</p>
+                  <p className="text-xs font-bold text-indigo-800 mb-1">Сообщение от банка:</p>
                   <p className="text-sm text-indigo-900 italic">«{app.employeeComment}»</p>
                 </div>
               )}
               {app.alternativeProduct && (
                 <div className="bg-blue-50 p-4 rounded-xl mt-3 border border-blue-100">
-                  <p className="text-xs font-bold text-blue-800 mb-1">Предложен альтернативный продукт:</p>
-                  <p className="text-sm font-bold text-blue-900">{app.alternativeProduct.name} (от {app.alternativeProduct.rate}%)</p>
+                  <p className="text-xs font-bold text-blue-800 mb-1">Предложено решение:</p>
+                  <p className="text-sm font-bold text-blue-900">{app.alternativeProduct.name} (Сумма: {(app.alternativeProduct as any).amount?.toLocaleString() || app.amount?.toLocaleString()} ₽)</p>
                 </div>
               )}
             </Card>
@@ -274,7 +345,7 @@ export default function ClientCabinet() {
     );
   };
 
-  // ============ 4. ПОДДЕРЖКА ============
+  // ============ 5. ПОДДЕРЖКА ============
   const renderSupport = () => (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
       <h1 className="text-2xl font-extrabold text-slate-900">Служба поддержки</h1>
@@ -328,11 +399,11 @@ export default function ClientCabinet() {
     </motion.div>
   );
 
-  // ============ 5. ДЕТАЛИ ЗАЯВКИ ============
+  // ============ 6. ДЕТАЛИ ЗАЯВКИ ============
   const renderAppDetail = () => {
     if (!viewingApp) return null;
     return (
-      <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-4">
+      <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="space-y-4 max-w-4xl mx-auto">
         <button onClick={() => { setActiveTab('applications'); setIsDisputing(false); }} className="text-slate-500 hover:text-alfa flex items-center gap-2 text-sm font-medium mb-2">
           <ArrowLeft className="w-4 h-4"/> К списку заявок
         </button>
@@ -347,11 +418,26 @@ export default function ClientCabinet() {
           </Badge>
         </div>
 
-        {viewingApp.employeeComment && (
+        {/* ПРАВКА ДАРЬИ: Запрос информации от клиента */}
+        {viewingApp.status === 'Нужна информация' && (
+          <Card className="p-6 border-l-4 border-yellow-500 bg-yellow-50/30">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle className="w-6 h-6 text-yellow-600"/>
+              <h3 className="font-bold text-yellow-800">Банку требуется дополнительная информация</h3>
+            </div>
+            <p className="text-sm text-slate-700 mb-4">{viewingApp.employeeComment || 'Пожалуйста, приложите актуальную выписку по расчетному счету.'}</p>
+            <Button onClick={() => setActiveTab('documents')} className="bg-yellow-500 hover:bg-yellow-600 text-white">
+              Перейти к документам
+            </Button>
+          </Card>
+        )}
+
+        {/* Плашка обратной связи (комментарий сотрудника) */}
+        {viewingApp.employeeComment && viewingApp.status !== 'Нужна информация' && (
           <Card className="p-4 bg-indigo-50 border-indigo-100 flex gap-3 items-start">
             <MessageCircle className="w-6 h-6 text-indigo-500 shrink-0 mt-0.5" />
             <div>
-              <h4 className="font-bold text-indigo-900 text-sm mb-1">Комментарий кредитного специалиста</h4>
+              <h4 className="font-bold text-indigo-900 text-sm mb-1">Сообщение от кредитного специалиста</h4>
               <p className="text-sm text-indigo-800 italic">«{viewingApp.employeeComment}»</p>
             </div>
           </Card>
@@ -367,19 +453,11 @@ export default function ClientCabinet() {
                   {t.done ? <CheckCircle2 className="w-5 h-5"/> : i+1}
                 </div>
                 <p className="text-sm font-bold text-slate-900">{t.step}</p>
-                {/* ИСПРАВЛЕН ШРИФТ ДАТЫ */}
                 <p className="text-xs text-slate-600 mt-1 font-medium">{t.date}</p>
               </div>
             ))}
           </div>
         </Card>
-
-        {(viewingApp.status === 'Новая' || viewingApp.status === 'На рассмотрении' || viewingApp.status === 'В работе') && (
-          <Card className="p-6 border-l-4 border-yellow-500 bg-yellow-50/30">
-            <div className="flex items-center gap-2 mb-2"><Clock className="w-6 h-6 text-yellow-600"/><h3 className="font-bold text-yellow-800">Заявка находится на рассмотрении</h3></div>
-            <p className="text-sm text-slate-700">Специалист анализирует данные компании и оценку риска.</p>
-          </Card>
-        )}
 
         {viewingApp.status === 'Предложена альтернатива' && viewingApp.alternativeProduct && (
           <Card className="p-6 border-l-4 border-blue-500 bg-blue-50/30">
@@ -387,10 +465,23 @@ export default function ClientCabinet() {
             <div className="bg-white p-4 rounded-xl border border-blue-100 mb-4">
               <p className="font-bold text-lg text-slate-900">{viewingApp.alternativeProduct.name}</p>
               <p className="text-sm text-slate-500">{viewingApp.alternativeProduct.desc}</p>
-              <p className="text-sm font-bold text-blue-600 mt-2">Ставка: от {viewingApp.alternativeProduct.rate}%</p>
+              <div className="flex gap-6 mt-3">
+                <div>
+                  <p className="text-xs text-slate-500">Ставка</p>
+                  <p className="font-bold text-blue-600 text-lg">от {viewingApp.alternativeProduct.rate}%</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Предлагаемая сумма</p>
+                  <p className="font-bold text-slate-900 text-lg">{((viewingApp.alternativeProduct as any).amount || viewingApp.amount)?.toLocaleString()} ₽</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">Срок</p>
+                  <p className="font-bold text-slate-900 text-lg">{((viewingApp.alternativeProduct as any).term || viewingApp.term)} мес.</p>
+                </div>
+              </div>
             </div>
             <div className="flex gap-3">
-              <Button onClick={() => toast.success('Вы приняли альтернативу!')}>Принять</Button>
+              <Button onClick={() => toast.success('Вы приняли альтернативу! Специалист свяжется с вами.')}>Принять предложение</Button>
               <Button variant="outline">Отклонить</Button>
             </div>
           </Card>
@@ -399,7 +490,18 @@ export default function ClientCabinet() {
         {viewingApp.status === 'Отказ' && (
           <Card className="p-6 border-l-4 border-red-500 bg-red-50/30">
             <div className="flex items-center gap-2 mb-3"><XCircle className="w-6 h-6 text-red-600"/><h3 className="font-bold text-red-800">Заявка отклонена</h3></div>
-            <p className="text-sm text-slate-600 mb-4">{viewingApp.reason || 'Недостаточная финансовая устойчивость'}</p>
+
+            {/* ПРАВКА ДАРЬИ: Клиенту даем причины простыми словами */}
+            <div className="bg-white p-4 rounded-xl border border-red-100 mb-4">
+              <p className="text-sm font-bold text-slate-800 mb-2">Причины отказа:</p>
+              <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
+                <li>{viewingApp.reason || 'Недостаточная финансовая устойчивость'}</li>
+                {viewingApp.risk_factors && viewingApp.risk_factors.map((f: any, idx: number) => (
+                  <li key={idx}>{f.name}</li>
+                ))}
+              </ul>
+            </div>
+
             {!isDisputing ? (
               <Button variant="outline" className="text-red-600 border-red-200" onClick={() => setIsDisputing(true)}>
                 <AlertTriangle className="w-4 h-4 mr-2" /> Оспорить решение
@@ -408,12 +510,12 @@ export default function ClientCabinet() {
               <div className="bg-white p-4 rounded-xl border border-red-200">
                 <textarea
                   className="w-full p-3 border border-slate-200 rounded-lg text-sm h-24 outline-none mb-3"
-                  placeholder="Опишите причину..."
+                  placeholder="Опишите причину несогласия или приложите новые данные..."
                   value={disputeText}
                   onChange={(e) => setDisputeText(e.target.value)}
                 />
                 <div className="flex gap-2">
-                  <Button onClick={handleDispute}>Отправить</Button>
+                  <Button onClick={handleDispute}>Отправить в банк</Button>
                   <Button variant="outline" onClick={() => setIsDisputing(false)}>Отмена</Button>
                 </div>
               </div>
@@ -429,18 +531,28 @@ export default function ClientCabinet() {
               <div><p className="text-xs text-slate-500">Срок</p><p className="font-bold text-lg">{viewingApp.term} мес.</p></div>
               <div>
                 <p className="text-xs text-slate-500">Ставка</p>
-                {/* ИСПРАВЛЕНЫ ПРОЦЕНТЫ */}
                 <p className="font-bold text-alfa text-2xl">{viewingApp.rate || 19}%</p>
               </div>
             </div>
             <Button variant="success" className="bg-green-500 hover:bg-green-600">Подписать договор</Button>
           </Card>
         )}
+
+        {/* Детали заявки (БЕЗ riskScore для клиента!) */}
+        <Card className="p-6 mt-6">
+          <h3 className="font-bold mb-4 text-lg">Параметры заявки</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div><p className="text-slate-500 text-xs mb-1">Продукт</p><p className="font-medium">{viewingApp.product}</p></div>
+            <div><p className="text-slate-500 text-xs mb-1">Сумма</p><p className="font-medium">{viewingApp.amount?.toLocaleString()} ₽</p></div>
+            <div><p className="text-slate-500 text-xs mb-1">Срок</p><p className="font-medium">{viewingApp.term} мес.</p></div>
+            <div><p className="text-slate-500 text-xs mb-1">Цель</p><p className="font-medium">{viewingApp.purpose || 'Не указана'}</p></div>
+          </div>
+        </Card>
       </motion.div>
     );
   };
 
-  // ============ 6. КАЛЬКУЛЯТОР ============
+  // ============ 7. КАЛЬКУЛЯТОР ============
   const renderCalculator = () => (
     <div className="bg-slate-50 rounded-[40px] p-8 md:p-12">
       <h1 className="text-3xl font-extrabold text-slate-900 mb-8">Рассчитаем кредит под вашу задачу</h1>
@@ -522,9 +634,9 @@ export default function ClientCabinet() {
               <HelpCircle className="w-12 h-12 text-slate-300 mb-4" />
               <h3 className="text-2xl font-extrabold text-slate-900 mb-3">Не нашли подходящий продукт?</h3>
               <p className="text-slate-500 text-base max-w-md mb-8">
-                Оставьте заявку, и наш специалист подберет для вас индивидуальные условия.
+                По вашим текущим параметрам нет стандартных предложений. Оставьте заявку, и специалист подберет индивидуальные условия.
               </p>
-              <Button onClick={() => { setSelectedProduct(null); setStep(2); }} className="bg-alfa text-white hover:bg-alfaDark px-8 py-4 text-lg rounded-xl">
+              <Button onClick={() => { setSelectedProduct(null); setStep(2); }} className="bg-alfa text-white hover:bg-alfaDark px-8 py-4 text-lg rounded-xl shadow-lg shadow-red-500/20">
                 Оставить заявку на индивидуальное рассмотрение
               </Button>
             </div>
@@ -534,13 +646,20 @@ export default function ClientCabinet() {
     </div>
   );
 
-  // ============ 7. ФОРМА ============
+  // ============ 8. ФОРМА ============
   const renderForm = () => (
     <div className="max-w-3xl mx-auto space-y-6">
-      <div className="flex items-center gap-4 mb-6">
-        <Button variant="outline" onClick={() => setStep(1)}><ArrowLeft className="w-4 h-4 mr-2"/> Назад</Button>
-        <h2 className="text-2xl font-extrabold">Оформление заявки</h2>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" onClick={() => setStep(1)}><ArrowLeft className="w-4 h-4 mr-2"/> Назад</Button>
+          <h2 className="text-2xl font-extrabold">Оформление заявки</h2>
+        </div>
+        {/* ПРАВКА ДАРЬИ: Кнопка сохранения черновика */}
+        <Button variant="secondary" onClick={handleSaveDraft} className="flex gap-2">
+          <FileEdit className="w-4 h-4"/> Сохранить черновик
+        </Button>
       </div>
+
       <div className="flex justify-between bg-white p-4 rounded-2xl shadow-sm border border-slate-100 overflow-x-auto mb-6">
         {[{s:2,l:'О компании'},{s:3,l:'Финансы'},{s:4,l:'Документы'},{s:5,l:'Решение'}].map((it) => (
           <div key={it.s} className="flex items-center gap-2">
@@ -577,8 +696,8 @@ export default function ClientCabinet() {
         )}
         {step === 4 && (
           <>
-            <h3 className="text-xl font-bold mb-6">Документы</h3>
-            <div className="space-y-3">
+            <h3 className="text-xl font-bold mb-6">Документы и согласия</h3>
+            <div className="space-y-3 mb-6">
               {documentRequirements.map(doc => (
                 <div key={doc.id} className="p-4 border border-slate-200 rounded-xl flex justify-between items-center">
                   <div><p className="font-medium text-sm">{doc.name}</p><p className="text-xs text-slate-500">{doc.format} • {doc.period}</p></div>
@@ -592,7 +711,28 @@ export default function ClientCabinet() {
                 </div>
               ))}
             </div>
-            <div className="flex gap-4 mt-8"><Button variant="outline" onClick={() => setStep(3)}>Назад</Button><Button className="flex-1" onClick={handleSubmit}>Отправить заявку</Button></div>
+
+            {/* ПРАВКА ДАРЬИ: Согласие на БКИ */}
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="bki"
+                checked={bkiConsent}
+                onChange={e => setBkiConsent(e.target.checked)}
+                className="mt-1 w-5 h-5 accent-alfa cursor-pointer"
+              />
+              <label htmlFor="bki" className="text-sm text-slate-700 cursor-pointer select-none">
+                Я согласен на запрос моей кредитной истории в БКИ и обработку персональных данных. <br/>
+                <span className="text-xs text-slate-500">Без этого согласия банк не имеет права запрашивать вашу кредитную историю.</span>
+              </label>
+            </div>
+
+            <div className="flex gap-4 mt-8">
+              <Button variant="outline" onClick={() => setStep(3)}>Назад</Button>
+              <Button className="flex-1" onClick={handleSubmit} disabled={!bkiConsent}>
+                Отправить заявку
+              </Button>
+            </div>
           </>
         )}
         {step === 5 && result && (
@@ -601,7 +741,7 @@ export default function ClientCabinet() {
               <Clock className="w-10 h-10 text-yellow-600"/>
             </div>
             <h2 className="text-2xl font-extrabold mb-2">Заявка успешно отправлена!</h2>
-            <p className="text-slate-500 mb-6 max-w-md mx-auto">Она находится на рассмотрении у специалиста.</p>
+            <p className="text-slate-500 mb-6 max-w-md mx-auto">Она находится на рассмотрении. Мы уведомим вас о решении в этом кабинете.</p>
             <Button onClick={() => { setStep(1); setActiveTab('applications'); }}>Перейти в мои заявки</Button>
           </div>
         )}
@@ -609,7 +749,7 @@ export default function ClientCabinet() {
     </div>
   );
 
-  // ============ 8. ДОКУМЕНТЫ ============
+  // ============ 9. ДОКУМЕНТЫ ============
   const renderDocuments = () => (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
       <div className="flex justify-between items-center mb-4">
@@ -621,7 +761,7 @@ export default function ClientCabinet() {
           <FileText className="w-8 h-8 text-blue-500 shrink-0"/>
           <div>
             <h3 className="font-bold text-slate-900">Вы еще не прикрепили ни одного документа</h3>
-            <p className="text-sm text-slate-500">Загрузите документы для ускорения рассмотрения.</p>
+            <p className="text-sm text-slate-500">Загрузите документы для ускорения рассмотрения заявок.</p>
           </div>
         </Card>
       )}
@@ -647,7 +787,7 @@ export default function ClientCabinet() {
     </motion.div>
   );
 
-  // ============ 9. ПРОФИЛЬ ============
+  // ============ 10. ПРОФИЛЬ ============
   const renderProfile = () => (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
       <div className="flex justify-between items-center mb-4">
@@ -684,6 +824,7 @@ export default function ClientCabinet() {
 
   return (
     <div className="flex h-[calc(100vh-64px)] bg-slate-50">
+      {/* Сайдбар */}
       <div className="w-64 bg-white border-r border-slate-200 flex flex-col hidden md:flex">
         <div className="p-6 border-b border-slate-100 flex items-center gap-3">
           <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center text-alfa font-bold">{clientName[0]}</div>
@@ -693,6 +834,7 @@ export default function ClientCabinet() {
           {[
             {id:'main', icon:<Home className="w-5 h-5"/>, label:'Главная'},
             {id:'applications', icon:<FileText className="w-5 h-5"/>, label:'Мои заявки'},
+            {id:'drafts', icon:<FileEdit className="w-5 h-5"/>, label:'Черновики'}, // <--- ДОБАВЛЕНО
             {id:'notifications', icon:<Bell className="w-5 h-5"/>, label:'Уведомления'},
             {id:'calculator', icon:<Calculator className="w-5 h-5"/>, label:'Рассчитать кредит'},
             {id:'documents', icon:<Upload className="w-5 h-5"/>, label:'Документы'},
@@ -710,11 +852,14 @@ export default function ClientCabinet() {
           </button>
         </div>
       </div>
+
+      {/* Контентная часть */}
       <div className="flex-1 overflow-y-auto p-6 md:p-8">
         <div className="max-w-5xl mx-auto">
           <AnimatePresence mode="wait">
             {activeTab === 'main' && renderMain()}
             {activeTab === 'applications' && renderApplications()}
+            {activeTab === 'drafts' && renderDrafts()}
             {activeTab === 'notifications' && renderNotifications()}
             {activeTab === 'support' && renderSupport()}
             {activeTab === 'app-detail' && renderAppDetail()}
