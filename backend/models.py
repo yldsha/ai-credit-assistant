@@ -67,7 +67,8 @@ class Application(Base):
     has_collateral = Column(Boolean, default=False, nullable=False)
     collateral_type = Column(String(50), default="none", nullable=False)
     business_age_months = Column(Integer, nullable=False, default=12)
-    annual_revenue = Column(Float, nullable=True, default=24000000.0)
+    # ИСПРАВЛЕНО: default=None, чтобы сценарий «нужна информация» срабатывал при отсутствии выручки
+    annual_revenue = Column(Float, nullable=True, default=None)
     monthly_turnover = Column(Float, nullable=False, default=2000000.0)
     monthly_expenses = Column(Float, nullable=False, default=1500000.0)
     existing_debt = Column(Float, nullable=False, default=0.0)
