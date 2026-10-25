@@ -1,0 +1,211 @@
+{
+  "_note": "Синтетические данные для моков. Формат: одна запись на ИНН, три блока — egrul, fns, bki. Генератор Даши должен выгружать данные в этом же формате. Поле industry — код отрасли как в датасете модели риска (trade, services, manufacturing, construction, it); industry_name — для интерфейса.",
+  "companies": [
+    {
+      "inn": "7701000001",
+      "_scenario": "Хороший клиент — автоматическое одобрение",
+      "egrul": {
+        "ogrn": "1207700000011",
+        "name": "ООО «Ромашка»",
+        "legal_form": "OOO",
+        "status": "active",
+        "registration_date": "2020-03-15",
+        "okved": "47.19",
+        "industry": "trade",
+        "region": "Москва",
+        "employees": 15,
+        "director": "Иванов Иван Иванович",
+        "industry_name": "Торговля"
+      },
+      "fns": {
+        "tax_debt": 0,
+        "invalid_info_flag": false,
+        "mass_address_flag": false
+      },
+      "bki": {
+        "active_loans": 1,
+        "closed_loans": 3,
+        "max_overdue_days_12m": 0,
+        "overdue_count_12m": 0,
+        "inquiries_6m": 1
+      }
+    },
+    {
+      "inn": "7701000002",
+      "_scenario": "Сигнал риска (налоговый долг) — ручная проверка",
+      "egrul": {
+        "ogrn": "1197700000022",
+        "name": "ООО «ТехноПлюс»",
+        "legal_form": "OOO",
+        "status": "active",
+        "registration_date": "2019-07-01",
+        "okved": "62.01",
+        "industry": "it",
+        "region": "Санкт-Петербург",
+        "employees": 8,
+        "director": "Петров Пётр Петрович",
+        "industry_name": "IT"
+      },
+      "fns": {
+        "tax_debt": 85000,
+        "invalid_info_flag": false,
+        "mass_address_flag": false
+      },
+      "bki": {
+        "active_loans": 2,
+        "closed_loans": 1,
+        "max_overdue_days_12m": 0,
+        "overdue_count_12m": 0,
+        "inquiries_6m": 2
+      }
+    },
+    {
+      "inn": "7701000003",
+      "_scenario": "Просрочка больше 90 дней — отказ по стоп-фактору",
+      "egrul": {
+        "ogrn": "1187700000033",
+        "name": "ООО «СтройСнаб»",
+        "legal_form": "OOO",
+        "status": "active",
+        "registration_date": "2018-02-20",
+        "okved": "41.20",
+        "industry": "construction",
+        "region": "Казань",
+        "employees": 40,
+        "director": "Сидоров Сидор Сидорович",
+        "industry_name": "Строительство"
+      },
+      "fns": {
+        "tax_debt": 0,
+        "invalid_info_flag": false,
+        "mass_address_flag": false
+      },
+      "bki": {
+        "active_loans": 3,
+        "closed_loans": 2,
+        "max_overdue_days_12m": 120,
+        "overdue_count_12m": 3,
+        "inquiries_6m": 6
+      }
+    },
+    {
+      "inn": "7701000004",
+      "_scenario": "Компания в ликвидации — отказ по стоп-фактору",
+      "egrul": {
+        "ogrn": "1167700000044",
+        "name": "ООО «Маркет»",
+        "legal_form": "OOO",
+        "status": "liquidation",
+        "registration_date": "2016-11-10",
+        "okved": "47.11",
+        "industry": "trade",
+        "region": "Екатеринбург",
+        "employees": 5,
+        "director": "Кузнецов Кузьма Кузьмич",
+        "industry_name": "Торговля"
+      },
+      "fns": {
+        "tax_debt": 0,
+        "invalid_info_flag": false,
+        "mass_address_flag": false
+      },
+      "bki": {
+        "active_loans": 0,
+        "closed_loans": 1,
+        "max_overdue_days_12m": 0,
+        "overdue_count_12m": 0,
+        "inquiries_6m": 0
+      }
+    },
+    {
+      "inn": "7701000005",
+      "_scenario": "Хороший клиент для крупной суммы (> 3 млн) — ручная проверка по сумме",
+      "egrul": {
+        "ogrn": "1157700000055",
+        "name": "ООО «Лидер»",
+        "legal_form": "OOO",
+        "status": "active",
+        "registration_date": "2015-05-05",
+        "okved": "49.41",
+        "industry": "services",
+        "region": "Новосибирск",
+        "employees": 60,
+        "director": "Смирнова Анна Сергеевна",
+        "industry_name": "Грузоперевозки"
+      },
+      "fns": {
+        "tax_debt": 0,
+        "invalid_info_flag": false,
+        "mass_address_flag": false
+      },
+      "bki": {
+        "active_loans": 1,
+        "closed_loans": 6,
+        "max_overdue_days_12m": 0,
+        "overdue_count_12m": 0,
+        "inquiries_6m": 1
+      }
+    },
+    {
+      "inn": "7701000006",
+      "_scenario": "БКИ недоступно — заявка уходит на ручную проверку",
+      "_simulate": {
+        "bki": "unavailable"
+      },
+      "egrul": {
+        "ogrn": "1217700000066",
+        "name": "ООО «Сервис+»",
+        "legal_form": "OOO",
+        "status": "active",
+        "registration_date": "2021-09-01",
+        "okved": "95.11",
+        "industry": "services",
+        "region": "Самара",
+        "employees": 12,
+        "director": "Волков Михаил Сергеевич",
+        "industry_name": "Услуги"
+      },
+      "fns": {
+        "tax_debt": 0,
+        "invalid_info_flag": false,
+        "mass_address_flag": false
+      },
+      "bki": {
+        "active_loans": 1,
+        "closed_loans": 0,
+        "max_overdue_days_12m": 0,
+        "overdue_count_12m": 0,
+        "inquiries_6m": 1
+      }
+    },
+    {
+      "inn": "770100000007",
+      "_scenario": "ИП, хороший клиент",
+      "egrul": {
+        "ogrn": "322770000000077",
+        "name": "ИП Сидоров Алексей Андреевич",
+        "legal_form": "IP",
+        "status": "active",
+        "registration_date": "2022-04-12",
+        "okved": "56.10",
+        "industry": "services",
+        "region": "Москва",
+        "employees": 4,
+        "director": "Сидоров Алексей Андреевич",
+        "industry_name": "Общепит"
+      },
+      "fns": {
+        "tax_debt": 0,
+        "invalid_info_flag": false,
+        "mass_address_flag": false
+      },
+      "bki": {
+        "active_loans": 0,
+        "closed_loans": 1,
+        "max_overdue_days_12m": 0,
+        "overdue_count_12m": 0,
+        "inquiries_6m": 0
+      }
+    }
+  ]
+}
