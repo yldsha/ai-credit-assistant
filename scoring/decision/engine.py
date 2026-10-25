@@ -105,9 +105,14 @@ def _soft_flags(inp: DecisionInput, cfg: dict) -> list[str]:
 
 
 def _factor_reasons(inp: DecisionInput, top: int = 3) -> list[str]:
-    risky = sorted((f for f in inp.risk_factors if f.get("contribution", 0) > 0),
-                   key=lambda f: f["contribution"], reverse=True)
-    return [f["name"] for f in risky[:top]]
+    def increases(f: dict) -> bool:
+        if "direction" in f:
+            return f["direction"] == "increases_risk"
+        return f.get("contribution", 0) > 0
+
+    risky = sorted((f for f in inp.risk_factors if increases(f)),
+                   key=lambda f: abs(f.get("contribution", 0)), reverse=True)
+    return [f.get("label") or f.get("name") or f.get("feature") for f in risky[:top]]
 
 
 def decide(inp: DecisionInput, products: list[dict] | None = None, cfg: dict | None = None) -> dict:
