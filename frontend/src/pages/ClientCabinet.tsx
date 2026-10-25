@@ -1,13 +1,20 @@
 import { useState, useEffect } from 'react';
-import { mockDecisionEngine, documentRequirements } from '../mocks/mockData';
-import { recommendProducts } from '../services/recommender';
+import { documentRequirements } from '../mocks/mockData';
 import { useApp } from '../context/AppContext';
+import {
+  createDraft,
+  submitApplication,
+  getApplications,
+  getApplicationById,
+  uploadDocument,
+  getDocuments
+} from '../services/api';
+import { recommendProducts } from '../services/recommender'; // Импортируем асинхронный рекомендатель
 import {
   Home, FileText, Calculator, User, ChevronRight, CheckCircle2, XCircle,
   ArrowLeft, Briefcase, CreditCard, ShieldCheck, HelpCircle, Upload, Clock,
-  Phone, Building2, MapPin, AlertTriangle, MessageSquare,
-  Wallet, Users, MessageCircle,
-  Bell, LifeBuoy, Headphones, Mail, FileEdit, FilePlus
+  Phone, Building2, MapPin, AlertTriangle, MessageSquare, Download, Wallet,
+  Users, MessageCircle, Bell, LifeBuoy, Headphones, Mail, FileEdit, FilePlus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -22,8 +29,15 @@ export default function ClientCabinet() {
   const [step, setStep] = useState(1);
   const [disputeText, setDisputeText] = useState('');
   const [isDisputing, setIsDisputing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // ПРАВКА ДАРЬИ: Согласие на БКИ
+  // Стейты для подписания договора
+  const [signStep, setSignStep] = useState<'offer' | 'contract' | 'otp' | 'signed' | 'disbursed'>('offer');
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [otpInput, setOtpInput] = useState('');
+  const [otpError, setOtpError] = useState(false);
+
+  // Согласие на БКИ
   const [bkiConsent, setBkiConsent] = useState(false);
 
   const [calcParams, setCalcParams] = useState({
@@ -34,106 +48,140 @@ export default function ClientCabinet() {
     termYears: 2,
   });
 
+  // Стейты для рекомендаций
   const [recommendations, setRecommendations] = useState<any[]>([]);
+  const [isRecLoading, setIsRecLoading] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
 
   const [formData, setFormData] = useState({
-    inn: '7701234567', ogrn: '1234567890123', companyName: 'ООО «Ромашка»', region: 'Москва',
-    revenue: 50000000, profit: 3500000, liabilities: 2000000,
-    director: 'Иванов Иван Иванович', phone: '+7 (999) 123-45-67', email: 'ivan@romashka.ru',
-    address: 'г. Москва, ул. Тверская, д. 1', okved: '47.11 Торговля розничная'
+    inn: '770200000001',
+    ogrn: '1234567890123',
+    companyName: 'ООО «Ромашка»',
+    region: 'Москва',
+    revenue: 50000000,
+    profit: 3500000,
+    liabilities: 2000000,
+    director: 'Иванов Иван Иванович',
+    phone: '+7 (999) 123-45-67',
+    email: 'ivan@romashka.ru',
+    address: 'г. Москва, ул. Тверская, д. 1',
+    okved: '47.11 Торговля розничная',
+    purpose: 'working_capital'
   });
   const [result, setResult] = useState<any>(null);
 
-  // ПРАВКА ДАРЬИ: Исправляем "Ближайший платеж" на главной, чтобы он бился с реальными кредитами
-  // Берем сумму из первой одобренной заявки или выводим 0, если кредитов нет
-  const approvedApps = apps.filter(a => a.status === 'Одобрено');
-  const totalDebt = approvedApps.reduce((sum, app) => sum + (app.amount || 0), 0);
-  // Условный расчет ежемесячного платежа по одобренным кредитам
-  const estimatedMonthlyPayment = approvedApps.length > 0 ? Math.round(totalDebt / 24) : 0;
-
+  // Загрузка заявок и документов при монтировании
   useEffect(() => {
-    const res = recommendProducts(calcParams);
-    setRecommendations(res);
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const fetchedApps = await getApplications(formData.inn);
+      if (fetchedApps) setApps(fetchedApps);
+      const fetchedDocs = await getDocuments(formData.inn);
+      if (fetchedDocs) setDocs(fetchedDocs);
+    } catch (e) {
+      console.error("Ошибка загрузки данных", e);
+    }
+  };
+
+  // Асинхронный вызов рекомендательной модели
+  useEffect(() => {
+    let isMounted = true;
+    const fetchRecs = async () => {
+      setIsRecLoading(true);
+      try {
+        const recs = await recommendProducts(calcParams);
+        if (isMounted) setRecommendations(recs || []);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (isMounted) setIsRecLoading(false);
+      }
+    };
+    fetchRecs();
+    return () => { isMounted = false; };
   }, [calcParams]);
 
-  // ПРАВКА ДАРЬИ: Сохранение черновика
-  const handleSaveDraft = () => {
-    const draftApp = {
-      ...formData,
-      company: formData.companyName,
-      ...calcParams,
-      amount: calcParams.amount,
-      term: calcParams.termYears * 12,
-      id: `2026-D${Math.floor(Math.random() * 1000)}`,
-      date: new Date().toLocaleDateString('ru-RU'),
-      status: 'Черновик',
-      product: selectedProduct?.product.name || 'Не выбран',
-      timeline: [{ step: 'Черновик создан', date: new Date().toLocaleString('ru-RU'), done: true }]
-    };
-    const updatedApps = [draftApp, ...apps];
-    setApps(updatedApps);
-    localStorage.setItem('mock_apps', JSON.stringify(updatedApps));
-    toast.success('Черновик сохранен! Вы можете вернуться к нему позже.');
-    setActiveTab('drafts');
-    setStep(1);
+  // Поллинг статуса заявки
+  useEffect(() => {
+    if (!viewingApp) return;
+    const isProcessing = ['Проверка данных', 'Оценка рисков', 'На рассмотрении'].includes(viewingApp.status);
+    if (!isProcessing) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const updatedApp = await getApplicationById(viewingApp.id);
+        if (updatedApp && updatedApp.status !== viewingApp.status) {
+          setViewingApp(updatedApp);
+          setApps(prev => prev.map(a => a.id === updatedApp.id ? updatedApp : a));
+        }
+      } catch (e) {
+        console.error("Ошибка поллинга", e);
+      }
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [viewingApp, setApps]);
+
+  // Сброс шагов подписания при открытии другой заявки
+  useEffect(() => {
+    setSignStep('offer');
+    setTermsAccepted(false);
+    setOtpInput('');
+    setOtpError(false);
+    setIsDisputing(false);
+  }, [viewingApp]);
+
+  const approvedApps = apps.filter(a => a.status === 'Одобрено');
+  const totalDebt = approvedApps.reduce((sum, app) => sum + (app.amount || 0), 0);
+  const estimatedMonthlyPayment = approvedApps.length > 0 ? Math.round(totalDebt / 24) : 0;
+
+  const handleSaveDraft = async () => {
+    try {
+      await createDraft({ ...formData, ...calcParams, term: calcParams.termYears * 12 });
+      toast.success('Черновик сохранен на сервере!');
+      await loadData();
+      setActiveTab('drafts');
+      setStep(1);
+    } catch (e) {
+      toast.error('Ошибка при сохранении черновика');
+    }
   };
 
   const handleSubmit = async () => {
-    // ПРАВКА ДАРЬИ: Блокируем отправку без согласия на БКИ
     if (!bkiConsent) {
       toast.error('Необходимо ваше согласие на запрос кредитной истории в БКИ');
       return;
     }
 
-    const isManual = !selectedProduct;
-    const productToUse = selectedProduct?.product || { name: 'Индивидуальное предложение', rate: 0 };
-
-    const decision = mockDecisionEngine({ ...calcParams, ...formData, amount: calcParams.amount });
-    setResult(decision);
-
-    // ПРАВКА ДАРЬИ: Мы больше не отдаем клиенту внутренний riskScore. Сохраняем для сотрудника.
-    const newApp = {
-      ...formData,
-      company: formData.companyName,
-      ...calcParams,
-      amount: calcParams.amount,
-      term: calcParams.termYears * 12,
-      id: `2026-0${Math.floor(Math.random() * 1000)}`,
-      date: new Date().toLocaleDateString('ru-RU'),
-      status: decision.status === 'APPROVED' ? 'Одобрено' : 'На рассмотрении',
-      // status: 'На рассмотрении', // По ТЗ Дарьи, даже авто-одобрение лучше кидать в бэкенд
-      mlRecommendation: decision.status === 'APPROVED' ? 'Склоняется к одобрению' : 'Требуется ручная проверка',
-      riskScore: decision.riskScore,
-      rate: productToUse.rate || 19,
-      reason: decision.reason,
-      product: productToUse.name,
-      isManual: isManual,
-      payment: selectedProduct?.payment || 0,
-      risk_factors: decision.risk_factors,
-      external_checks: decision.external_checks,
-      timeline: [
-        { step: 'Заявка получена', date: new Date().toLocaleString('ru-RU'), done: true },
-        { step: 'Проверка данных', date: 'В процессе', done: false },
-        { step: 'Оценка рисков', date: '—', done: false },
-        { step: 'Решение', date: '—', done: false },
-      ],
-    };
-
-    const updatedApps = [newApp, ...apps];
-    setApps(updatedApps);
-    localStorage.setItem('mock_apps', JSON.stringify(updatedApps));
-    setStep(5);
-    toast.success('Заявка отправлена на рассмотрение!');
+    setIsSubmitting(true);
+    try {
+      const draft = await createDraft({ ...formData, ...calcParams, term: calcParams.termYears * 12 });
+      const submitted = await submitApplication(draft.id);
+      setResult(submitted);
+      await loadData();
+      setStep(5);
+      toast.success('Заявка отправлена на рассмотрение!');
+    } catch (e) {
+      toast.error('Произошла ошибка при отправке заявки');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleUpload = (docId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUpload = async (docId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const newDocs = { ...docs, [docId]: { name: file.name, size: (file.size / 1024).toFixed(1) + ' КБ' } };
-    setDocs(newDocs);
-    localStorage.setItem('mock_docs', JSON.stringify(newDocs));
-    toast.success('Документ успешно загружен');
+    try {
+      await uploadDocument(formData.inn, docId, file);
+      const updatedDocs = await getDocuments(formData.inn);
+      setDocs(updatedDocs);
+      toast.success('Документ успешно загружен');
+    } catch (e) {
+      toast.error('Ошибка загрузки документа');
+    }
   };
 
   const handleDispute = () => {
@@ -149,7 +197,6 @@ export default function ClientCabinet() {
     });
     setApps(updated);
     setViewingApp({ ...viewingApp, status: 'Оспорено', clientComment: disputeText });
-    localStorage.setItem('mock_apps', JSON.stringify(updated));
     setIsDisputing(false);
     toast.success('Ваше обращение отправлено в банк');
   };
@@ -263,7 +310,7 @@ export default function ClientCabinet() {
     </motion.div>
   );
 
-  // ============ 3. ЧЕРНОВИКИ (НОВАЯ ВКЛАДКА) ============
+  // ============ 3. ЧЕРНОВИКИ ============
   const renderDrafts = () => {
     const drafts = apps.filter(a => a.status === 'Черновик');
     return (
@@ -418,7 +465,6 @@ export default function ClientCabinet() {
           </Badge>
         </div>
 
-        {/* ПРАВКА ДАРЬИ: Запрос информации от клиента */}
         {viewingApp.status === 'Нужна информация' && (
           <Card className="p-6 border-l-4 border-yellow-500 bg-yellow-50/30">
             <div className="flex items-center gap-2 mb-2">
@@ -432,7 +478,6 @@ export default function ClientCabinet() {
           </Card>
         )}
 
-        {/* Плашка обратной связи (комментарий сотрудника) */}
         {viewingApp.employeeComment && viewingApp.status !== 'Нужна информация' && (
           <Card className="p-4 bg-indigo-50 border-indigo-100 flex gap-3 items-start">
             <MessageCircle className="w-6 h-6 text-indigo-500 shrink-0 mt-0.5" />
@@ -463,20 +508,19 @@ export default function ClientCabinet() {
           <Card className="p-6 border-l-4 border-blue-500 bg-blue-50/30">
             <div className="flex items-center gap-2 mb-3"><MessageSquare className="w-6 h-6 text-blue-600"/><h3 className="font-bold text-blue-800">Банк предлагает альтернативные условия</h3></div>
             <div className="bg-white p-4 rounded-xl border border-blue-100 mb-4">
-              <p className="font-bold text-lg text-slate-900">{viewingApp.alternativeProduct.name}</p>
-              <p className="text-sm text-slate-500">{viewingApp.alternativeProduct.desc}</p>
+              <p className="font-bold text-lg text-slate-900">{viewingApp.alternativeProduct.name || viewingApp.alternativeProduct.product_name}</p>
               <div className="flex gap-6 mt-3">
                 <div>
                   <p className="text-xs text-slate-500">Ставка</p>
-                  <p className="font-bold text-blue-600 text-lg">от {viewingApp.alternativeProduct.rate}%</p>
+                  <p className="font-bold text-blue-600 text-lg">от {viewingApp.alternativeProduct.rate || viewingApp.alternativeProduct.rate_calc}%</p>
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500">Предлагаемая сумма</p>
-                  <p className="font-bold text-slate-900 text-lg">{((viewingApp.alternativeProduct as any).amount || viewingApp.amount)?.toLocaleString()} ₽</p>
+                  <p className="text-xs text-slate-500">Сумма</p>
+                  <p className="font-bold text-slate-900 text-lg">{viewingApp.alternativeProduct.amount?.toLocaleString() || viewingApp.amount?.toLocaleString()} ₽</p>
                 </div>
                 <div>
                   <p className="text-xs text-slate-500">Срок</p>
-                  <p className="font-bold text-slate-900 text-lg">{((viewingApp.alternativeProduct as any).term || viewingApp.term)} мес.</p>
+                  <p className="font-bold text-slate-900 text-lg">{viewingApp.alternativeProduct.term_months || viewingApp.alternativeProduct.term || viewingApp.term} мес.</p>
                 </div>
               </div>
             </div>
@@ -490,14 +534,12 @@ export default function ClientCabinet() {
         {viewingApp.status === 'Отказ' && (
           <Card className="p-6 border-l-4 border-red-500 bg-red-50/30">
             <div className="flex items-center gap-2 mb-3"><XCircle className="w-6 h-6 text-red-600"/><h3 className="font-bold text-red-800">Заявка отклонена</h3></div>
-
-            {/* ПРАВКА ДАРЬИ: Клиенту даем причины простыми словами */}
             <div className="bg-white p-4 rounded-xl border border-red-100 mb-4">
               <p className="text-sm font-bold text-slate-800 mb-2">Причины отказа:</p>
               <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
                 <li>{viewingApp.reason || 'Недостаточная финансовая устойчивость'}</li>
                 {viewingApp.risk_factors && viewingApp.risk_factors.map((f: any, idx: number) => (
-                  <li key={idx}>{f.name}</li>
+                  <li key={idx}>{f.label || f.name}</li>
                 ))}
               </ul>
             </div>
@@ -525,20 +567,132 @@ export default function ClientCabinet() {
 
         {viewingApp.status === 'Одобрено' && (
           <Card className="p-6 border-l-4 border-green-500 bg-green-50/30">
-            <div className="flex items-center gap-2 mb-3"><CheckCircle2 className="w-6 h-6 text-green-600"/><h3 className="font-bold text-green-800">Заявка одобрена!</h3></div>
-            <div className="grid grid-cols-3 gap-4 mb-4">
-              <div><p className="text-xs text-slate-500">Сумма</p><p className="font-bold text-lg">{viewingApp.amount?.toLocaleString()} ₽</p></div>
-              <div><p className="text-xs text-slate-500">Срок</p><p className="font-bold text-lg">{viewingApp.term} мес.</p></div>
-              <div>
-                <p className="text-xs text-slate-500">Ставка</p>
-                <p className="font-bold text-alfa text-2xl">{viewingApp.rate || 19}%</p>
-              </div>
+            <div className="flex items-center gap-2 mb-4">
+              <CheckCircle2 className="w-6 h-6 text-green-600"/>
+              <h3 className="font-bold text-green-800 text-xl">Заявка одобрена!</h3>
             </div>
-            <Button variant="success" className="bg-green-500 hover:bg-green-600">Подписать договор</Button>
+
+            {signStep === 'offer' && (
+              <div>
+                <div className="bg-white p-5 rounded-xl border border-green-100 mb-6 shadow-sm">
+                  <h4 className="font-bold text-slate-900 mb-4">Предложение по кредиту</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div><p className="text-xs text-slate-500">Продукт</p><p className="font-medium">{viewingApp.product}</p></div>
+                    <div><p className="text-xs text-slate-500">Сумма</p><p className="font-bold text-lg">{viewingApp.amount?.toLocaleString()} ₽</p></div>
+                    <div><p className="text-xs text-slate-500">Срок</p><p className="font-bold">{viewingApp.term} мес.</p></div>
+                    <div><p className="text-xs text-slate-500">Ставка</p><p className="font-bold text-alfa text-lg">{viewingApp.rate || 19}%</p></div>
+                  </div>
+                  <div className="bg-slate-50 p-3 rounded-lg flex justify-between items-center text-sm">
+                    <span className="text-slate-600">Ежемесячный платеж (примерно)</span>
+                    <span className="font-bold text-slate-900">{Math.round((viewingApp.amount || 0) / (viewingApp.term || 1) * 1.2).toLocaleString()} ₽</span>
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <Button onClick={() => setSignStep('contract')} className="flex-1 bg-green-500 hover:bg-green-600 py-3">
+                    Принять предложение
+                  </Button>
+                  <Button variant="outline" className="flex-1 py-3">Отказаться</Button>
+                </div>
+              </div>
+            )}
+
+            {signStep === 'contract' && (
+              <div>
+                <div className="bg-white p-6 rounded-xl border border-slate-200 mb-6 shadow-sm">
+                  <h4 className="font-bold text-lg mb-4 text-center">Кредитный договор № {viewingApp.id}</h4>
+                  <div className="space-y-2 text-sm text-slate-700 mb-6">
+                    <p><strong>Кредитор:</strong> АО «Альфа-Банк»</p>
+                    <p><strong>Заемщик:</strong> {viewingApp.company} (ИНН: {viewingApp.inn})</p>
+                    <p><strong>Продукт:</strong> {viewingApp.product}</p>
+                    <p><strong>Сумма:</strong> {viewingApp.amount?.toLocaleString()} ₽</p>
+                    <p><strong>Срок:</strong> {viewingApp.term} месяцев</p>
+                    <p><strong>Процентная ставка:</strong> {viewingApp.rate || 19}% годовых</p>
+                  </div>
+
+                  <button onClick={() => toast.success('Договор скачан (демо)')} className="flex items-center gap-2 text-sm font-bold text-blue-600 hover:text-blue-800 mb-6">
+                    <Download className="w-4 h-4" /> Скачать договор (PDF)
+                  </button>
+
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      id="terms"
+                      checked={termsAccepted}
+                      onChange={e => setTermsAccepted(e.target.checked)}
+                      className="mt-1 w-5 h-5 accent-green-500 cursor-pointer"
+                    />
+                    <label htmlFor="terms" className="text-sm text-slate-700 cursor-pointer select-none">
+                      Я ознакомлен с условиями кредитного договора и тарифами банка, и подтверждаю свое согласие.
+                    </label>
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <Button onClick={() => setSignStep('otp')} disabled={!termsAccepted} className="flex-1 bg-alfa hover:bg-alfaDark py-3 text-white">
+                    Подписать электронной подписью
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {signStep === 'otp' && (
+              <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm text-center">
+                <ShieldCheck className="w-12 h-12 text-alfa mx-auto mb-4" />
+                <h4 className="font-bold text-lg mb-2">Подтверждение подписи</h4>
+                <p className="text-sm text-slate-500 mb-6">
+                  Демо-режим: в реальном продукте — подписание через Альфа-Бизнес или квалифицированную электронную подпись.
+                </p>
+
+                <div className="inline-block bg-red-50 border border-red-200 text-alfa px-6 py-3 rounded-xl font-bold text-2xl tracking-widest mb-6">
+                  Код: 4821
+                </div>
+
+                <div className="max-w-xs mx-auto mb-6">
+                  <input
+                    type="text"
+                    placeholder="Введите код из 4 цифр"
+                    value={otpInput}
+                    onChange={e => { setOtpInput(e.target.value); setOtpError(false); }}
+                    className={`w-full p-4 text-center text-2xl tracking-widest border rounded-xl outline-none focus:ring-2 ${otpError ? 'border-red-500 ring-red-100' : 'border-slate-300 focus:ring-alfa'}`}
+                    maxLength={4}
+                  />
+                  {otpError && <p className="text-red-500 text-xs mt-1">Неверный код. Попробуйте 4821.</p>}
+                </div>
+
+                <div className="flex gap-3 justify-center">
+                  <Button variant="outline" onClick={() => setSignStep('contract')}>Назад</Button>
+                  <Button onClick={() => {
+                    if (otpInput === '4821') {
+                      setSignStep('signed');
+                      setTimeout(() => setSignStep('disbursed'), 2000);
+                    } else {
+                      setOtpError(true);
+                    }
+                  }} className="bg-green-500 hover:bg-green-600 text-white px-8">
+                    Подтвердить
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {signStep === 'signed' && (
+              <div className="text-center py-8">
+                <CheckCircle2 className="w-16 h-16 text-green-500 mx-auto mb-4" />
+                <h3 className="text-2xl font-extrabold text-slate-900 mb-2">Договор подписан!</h3>
+                <p className="text-slate-500">Подготовка к перечислению средств...</p>
+              </div>
+            )}
+
+            {signStep === 'disbursed' && (
+              <div className="text-center py-8 bg-green-50 rounded-xl border border-green-200">
+                <Wallet className="w-16 h-16 text-green-600 mx-auto mb-4" />
+                <h3 className="text-2xl font-extrabold text-slate-900 mb-2">Кредит выдан!</h3>
+                <p className="text-lg font-bold text-green-700 mb-2">{viewingApp.amount?.toLocaleString()} ₽ зачислены на расчётный счёт</p>
+                <p className="text-sm text-slate-500">Симуляция завершена. В реальном продукте здесь произошло бы реальное зачисление.</p>
+              </div>
+            )}
           </Card>
         )}
 
-        {/* Детали заявки (БЕЗ riskScore для клиента!) */}
         <Card className="p-6 mt-6">
           <h3 className="font-bold mb-4 text-lg">Параметры заявки</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -606,30 +760,37 @@ export default function ClientCabinet() {
         </div>
 
         <div className="flex-1 space-y-4">
-          {recommendations.length > 0 ? recommendations.map((rec, idx) => (
-            <motion.div key={rec.product.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.1 }}>
-              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 relative">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className="text-xl font-extrabold text-slate-900 mb-1">{rec.product.name}</h3>
-                    <p className="text-slate-500 text-sm">{rec.product.desc}</p>
+          {isRecLoading ? (
+            <div className="flex flex-col items-center justify-center h-full space-y-4">
+              <div className="w-12 h-12 border-4 border-alfa border-t-transparent rounded-full animate-spin"></div>
+              <p className="text-slate-500 font-medium">Подбираем лучшие условия...</p>
+            </div>
+          ) : recommendations.length > 0 ? (
+            recommendations.map((rec, idx) => (
+              <motion.div key={rec.product.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.1 }}>
+                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 relative">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h3 className="text-xl font-extrabold text-slate-900 mb-1">{rec.product.name}</h3>
+                      <p className="text-slate-500 text-sm">{rec.product.desc}</p>
+                    </div>
+                    <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center shrink-0">
+                      <Briefcase className="w-6 h-6 text-slate-600" />
+                    </div>
                   </div>
-                  <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center shrink-0">
-                    {rec.product.icon === 'car' ? <span className="text-2xl">🚗</span> : rec.product.icon === 'money' ? <span className="text-2xl">🏠</span> : rec.product.icon === 'card' ? <CreditCard className="w-6 h-6 text-slate-600" /> : rec.product.icon === 'shield' ? <ShieldCheck className="w-6 h-6 text-slate-600" /> : <Briefcase className="w-6 h-6 text-slate-600" />}
+                  <div className="grid grid-cols-3 gap-4 mb-6">
+                    <div><p className="text-xs text-slate-500 mb-1">Ставка</p><p className="font-extrabold text-lg">{rec.product.rate}%</p></div>
+                    <div><p className="text-xs text-slate-500 mb-1">Переплата</p><p className="font-extrabold text-lg">{rec.overpayment.toLocaleString()} ₽</p></div>
+                    <div><p className="text-xs text-slate-500 mb-1">Платёж</p><p className="font-extrabold text-lg">{rec.payment.toLocaleString()} ₽</p></div>
+                  </div>
+                  <div className="flex gap-3">
+                    <Button variant="secondary" className="bg-slate-100 text-slate-700 hover:bg-slate-200">Узнать подробнее</Button>
+                    <Button onClick={() => { setSelectedProduct(rec); setStep(2); }} className="bg-alfa text-white hover:bg-alfaDark">Заполнить заявку</Button>
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-4 mb-6">
-                  <div><p className="text-xs text-slate-500 mb-1">Ставка</p><p className="font-extrabold text-lg">{rec.product.rate}%</p></div>
-                  <div><p className="text-xs text-slate-500 mb-1">Переплата</p><p className="font-extrabold text-lg">{rec.overpayment.toLocaleString()} ₽</p></div>
-                  <div><p className="text-xs text-slate-500 mb-1">Платёж</p><p className="font-extrabold text-lg">{rec.payment.toLocaleString()} ₽</p></div>
-                </div>
-                <div className="flex gap-3">
-                  <Button variant="secondary" className="bg-slate-100 text-slate-700 hover:bg-slate-200">Узнать подробнее</Button>
-                  <Button onClick={() => { setSelectedProduct(rec); setStep(2); }} className="bg-alfa text-white hover:bg-alfaDark">Заполнить заявку</Button>
-                </div>
-              </div>
-            </motion.div>
-          )) : (
+              </motion.div>
+            ))
+          ) : (
             <div className="bg-white p-10 rounded-3xl shadow-sm border-2 border-dashed border-slate-200 text-center flex flex-col items-center justify-center h-full">
               <HelpCircle className="w-12 h-12 text-slate-300 mb-4" />
               <h3 className="text-2xl font-extrabold text-slate-900 mb-3">Не нашли подходящий продукт?</h3>
@@ -654,8 +815,7 @@ export default function ClientCabinet() {
           <Button variant="outline" onClick={() => setStep(1)}><ArrowLeft className="w-4 h-4 mr-2"/> Назад</Button>
           <h2 className="text-2xl font-extrabold">Оформление заявки</h2>
         </div>
-        {/* ПРАВКА ДАРЬИ: Кнопка сохранения черновика */}
-        <Button variant="secondary" onClick={handleSaveDraft} className="flex gap-2">
+        <Button variant="secondary" onClick={handleSaveDraft} className="flex gap-2" disabled={isSubmitting}>
           <FileEdit className="w-4 h-4"/> Сохранить черновик
         </Button>
       </div>
@@ -712,7 +872,6 @@ export default function ClientCabinet() {
               ))}
             </div>
 
-            {/* ПРАВКА ДАРЬИ: Согласие на БКИ */}
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 flex items-start gap-3">
               <input
                 type="checkbox"
@@ -729,8 +888,8 @@ export default function ClientCabinet() {
 
             <div className="flex gap-4 mt-8">
               <Button variant="outline" onClick={() => setStep(3)}>Назад</Button>
-              <Button className="flex-1" onClick={handleSubmit} disabled={!bkiConsent}>
-                Отправить заявку
+              <Button className="flex-1" onClick={handleSubmit} disabled={!bkiConsent || isSubmitting}>
+                {isSubmitting ? 'Отправка...' : 'Отправить заявку'}
               </Button>
             </div>
           </>
@@ -741,7 +900,7 @@ export default function ClientCabinet() {
               <Clock className="w-10 h-10 text-yellow-600"/>
             </div>
             <h2 className="text-2xl font-extrabold mb-2">Заявка успешно отправлена!</h2>
-            <p className="text-slate-500 mb-6 max-w-md mx-auto">Она находится на рассмотрении. Мы уведомим вас о решении в этом кабинете.</p>
+            <p className="text-slate-500 mb-6 max-w-md mx-auto">Она находится на рассмотрении. Система уже начала проверку ваших данных.</p>
             <Button onClick={() => { setStep(1); setActiveTab('applications'); }}>Перейти в мои заявки</Button>
           </div>
         )}
@@ -792,7 +951,7 @@ export default function ClientCabinet() {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-extrabold">Профиль компании</h1>
-        <Button onClick={() => toast.success('Профиль сохранен')}>Сохранить</Button>
+        <Button onClick={() => toast.success('Профиль сохранен (демо)')}>Сохранить</Button>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card className="p-6">
@@ -824,7 +983,6 @@ export default function ClientCabinet() {
 
   return (
     <div className="flex h-[calc(100vh-64px)] bg-slate-50">
-      {/* Сайдбар */}
       <div className="w-64 bg-white border-r border-slate-200 flex flex-col hidden md:flex">
         <div className="p-6 border-b border-slate-100 flex items-center gap-3">
           <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center text-alfa font-bold">{clientName[0]}</div>
@@ -834,7 +992,7 @@ export default function ClientCabinet() {
           {[
             {id:'main', icon:<Home className="w-5 h-5"/>, label:'Главная'},
             {id:'applications', icon:<FileText className="w-5 h-5"/>, label:'Мои заявки'},
-            {id:'drafts', icon:<FileEdit className="w-5 h-5"/>, label:'Черновики'}, // <--- ДОБАВЛЕНО
+            {id:'drafts', icon:<FileEdit className="w-5 h-5"/>, label:'Черновики'},
             {id:'notifications', icon:<Bell className="w-5 h-5"/>, label:'Уведомления'},
             {id:'calculator', icon:<Calculator className="w-5 h-5"/>, label:'Рассчитать кредит'},
             {id:'documents', icon:<Upload className="w-5 h-5"/>, label:'Документы'},
@@ -853,7 +1011,6 @@ export default function ClientCabinet() {
         </div>
       </div>
 
-      {/* Контентная часть */}
       <div className="flex-1 overflow-y-auto p-6 md:p-8">
         <div className="max-w-5xl mx-auto">
           <AnimatePresence mode="wait">

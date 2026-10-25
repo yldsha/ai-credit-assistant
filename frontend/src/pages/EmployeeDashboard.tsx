@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { products, mockGetSystemSuggestions } from '../mocks/mockData';
+import { getEmployeeApplications, makeEmployeeDecision } from '../services/api';
+import { products } from '../mocks/mockData'; // Используем для выпадающего списка альтернатив
 import {
   Search, Briefcase, PieChart, CheckCircle2, XCircle,
   ShieldAlert, ArrowLeft, RefreshCw, FileText, Check, AlertTriangle,
@@ -13,11 +14,12 @@ import { Button, Card, Badge } from '../components/ui';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function EmployeeDashboard() {
-  const { apps, setApps, employeeName, resetData } = useApp();
+  const { apps, setApps, employeeName } = useApp();
   const [selectedApp, setSelectedApp] = useState<any>(null);
   const [activeMenu, setActiveMenu] = useState<'applications' | 'statistics'>('applications');
   const [filter, setFilter] = useState('Все');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   // Стейты для панели решения
   const [comment, setComment] = useState('');
@@ -27,64 +29,95 @@ export default function EmployeeDashboard() {
   const [needInfoText, setNeedInfoText] = useState('');
   const [isNeedInfoOpen, setIsNeedInfoOpen] = useState(false);
 
+  // Загрузка заявок с бэкенда
+  const loadApplications = async () => {
+    setIsLoading(true);
+    try {
+      const data = await getEmployeeApplications();
+      setApps(data);
+    } catch (error) {
+      toast.error('Ошибка загрузки заявок с сервера');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadApplications();
+  }, []);
+
   useEffect(() => {
     if (activeMenu === 'applications') setSelectedApp(null);
   }, [activeMenu]);
 
   const handleTakeToWork = () => {
     if (!selectedApp) return;
+    // На бэкенде Кости нет отдельного эндпоинта "взять в работу",
+    // поэтому мы просто меняем стейт локально для удобства UI.
     const updated = apps.map(a => a.id === selectedApp.id ? { ...a, status: 'В работе' } : a);
     setApps(updated);
     setSelectedApp({ ...selectedApp, status: 'В работе' });
-    localStorage.setItem('mock_apps', JSON.stringify(updated));
     toast.success('Заявка взята в работу');
   };
 
-  // ПРАВКА ДАРЬИ: Комментарий обязателен при ЛЮБОМ решении.
-  // ПРАВКА ДАРЬИ: Возможность изменить сумму и срок для альтернативы.
-  const handleDecision = (status: string) => {
+  // Отправка решения на бэкенд
+  const submitDecision = async (outcomeEng: string, outcomeRus: string, extraData?: any) => {
     if (!selectedApp) return;
 
-    // Проверка на обязательный комментарий для всех действий
-    if (!comment.trim() && status !== 'Нужна информация') {
+    // Проверка на обязательный комментарий (кроме запроса инфо)
+    if (!comment.trim() && outcomeEng !== 'need_info') {
       toast.error('Пожалуйста, оставьте комментарий для клиента (обязательно при любом решении)');
       return;
     }
 
-    let updateData: any = { status, employeeComment: comment };
+    if (outcomeEng === 'counter_offer' && !altProductId) {
+      toast.error('Выберите продукт для альтернативы');
+      return;
+    }
 
-    if (status === 'Предложена альтернатива') {
-      if (!altProductId) {
-        toast.error('Выберите продукт для альтернативы');
-        return;
-      }
-      const altProduct = products.find(p => p.id === altProductId);
-      // Сохраняем продукт вместе с новой суммой и сроком, если они указаны
-      updateData.alternativeProduct = {
-        ...altProduct,
+    try {
+      await makeEmployeeDecision(selectedApp.id, outcomeEng, comment || needInfoText, extraData);
+      toast.success(`Статус обновлен: ${outcomeRus}`);
+
+      // Обновляем данные с сервера, чтобы увидеть реальный статус
+      await loadApplications();
+
+      // Обновляем выбранную заявку
+      const updatedApp = {
+        ...selectedApp,
+        status: outcomeRus,
+        employeeComment: comment || needInfoText,
+        alternativeProduct: extraData ? { ...extraData, name: products.find(p => p.id === extraData.productId)?.name } : selectedApp.alternativeProduct
+      };
+      setSelectedApp(updatedApp);
+
+      // Очищаем форму
+      setComment('');
+      setAltProductId('');
+      setAltAmount('');
+      setAltTerm('');
+      setIsNeedInfoOpen(false);
+      setNeedInfoText('');
+    } catch (error) {
+      toast.error('Ошибка при отправке решения на сервер');
+    }
+  };
+
+  const handleDecision = (outcomeRus: string) => {
+    let outcomeEng = 'approved';
+    let extra = undefined;
+
+    if (outcomeRus === 'Отказ') outcomeEng = 'rejected';
+    if (outcomeRus === 'Предложена альтернатива') {
+      outcomeEng = 'counter_offer';
+      extra = {
+        productId: altProductId,
         amount: Number(altAmount) || selectedApp.amount,
         term: Number(altTerm) || selectedApp.term
       };
     }
 
-    const updated = apps.map(a => {
-      if (a.id === selectedApp.id) {
-        return {
-          ...a,
-          ...updateData,
-          timeline: a.timeline.map((t:any) => t.step === 'Решение' ? { ...t, date: `Решение: ${status}`, done: true } : t)
-        };
-      }
-      return a;
-    });
-    setApps(updated);
-    setSelectedApp({ ...selectedApp, ...updateData });
-    setComment('');
-    setAltProductId('');
-    setAltAmount('');
-    setAltTerm('');
-    toast.success(`Статус обновлен: ${status}`);
-    localStorage.setItem('mock_apps', JSON.stringify(updated));
+    submitDecision(outcomeEng, outcomeRus, extra);
   };
 
   const handleNeedInfo = () => {
@@ -92,42 +125,26 @@ export default function EmployeeDashboard() {
       toast.error('Укажите, какие документы или информацию нужно запросить');
       return;
     }
-    const updated = apps.map(a => {
-      if (a.id === selectedApp.id) {
-        return {
-          ...a,
-          status: 'Нужна информация',
-          employeeComment: needInfoText,
-          timeline: a.timeline.map((t:any) => t.step === 'Решение' ? { ...t, date: `Запрошена информация`, done: true } : t)
-        };
-      }
-      return a;
-    });
-    setApps(updated);
-    setSelectedApp({ ...selectedApp, status: 'Нужна информация', employeeComment: needInfoText });
-    setNeedInfoText('');
-    setIsNeedInfoOpen(false);
-    toast.success('Запрос информации отправлен клиенту');
-    localStorage.setItem('mock_apps', JSON.stringify(updated));
+    submitDecision('need_info', 'Нужна информация', { missingFields: [needInfoText] });
   };
 
-  // ЛОКАЛЬНАЯ СТАТИСТИКА (Вместо модуля в разработке)
+  // Фильтрация
   const filteredApps = apps.filter(a => {
     const matchesFilter = filter === 'Все' || a.status === filter;
     const searchLower = searchQuery.toLowerCase();
     const matchesSearch =
       (a.company && a.company.toLowerCase().includes(searchLower)) ||
-      (a.id && a.id.toLowerCase().includes(searchLower)) ||
+      (a.id && a.id.toString().includes(searchLower)) ||
       (a.inn && a.inn.includes(searchQuery));
     return matchesFilter && matchesSearch;
   });
 
+  // ============ СТАТИСТИКА ============
   const renderStatistics = () => {
-    // Считаем личную статистику сотрудника на основе текущих заявок
     const myApproved = apps.filter(a => a.status === 'Одобрено' && a.employeeComment).length;
     const myRejected = apps.filter(a => a.status === 'Отказ').length;
     const myNeedInfo = apps.filter(a => a.status === 'Нужна информация').length;
-    const myInProgress = apps.filter(a => a.status === 'В работе').length;
+    const myInProgress = apps.filter(a => a.status === 'В работе' || a.status === 'На рассмотрении').length;
     const autoApproved = apps.filter(a => a.status === 'Одобрено' && !a.employeeComment).length;
 
     const barData = [
@@ -139,9 +156,14 @@ export default function EmployeeDashboard() {
 
     return (
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="p-8 max-w-6xl mx-auto space-y-6">
-        <div>
-          <h1 className="text-3xl font-extrabold text-slate-900">Статистика</h1>
-          <p className="text-slate-500">Показатели вашей личной эффективности и работы конвейера</p>
+        <div className="flex justify-between items-end">
+          <div>
+            <h1 className="text-3xl font-extrabold text-slate-900">Статистика</h1>
+            <p className="text-slate-500">Показатели вашей личной эффективности и работы конвейера</p>
+          </div>
+          <Button onClick={loadApplications} disabled={isLoading} variant="outline" className="gap-2">
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} /> Обновить
+          </Button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -197,17 +219,13 @@ export default function EmployeeDashboard() {
     );
   };
 
+  // ============ ДЕТАЛИ ЗАЯВКИ ============
   const renderAppDetail = () => {
     if (!selectedApp) return null;
 
     const isActionRequired = selectedApp.status === 'Новая' || selectedApp.status === 'На рассмотрении';
     const isInProgress = selectedApp.status === 'В работе';
-
-    // ПРАВКА ДАРЬИ: Автоматическое одобрение системой (если нет комментария сотрудника)
     const isAutoApproved = selectedApp.status === 'Одобрено' && !selectedApp.employeeComment;
-
-    // Умные рекомендации для сотрудника
-    const systemSuggestions = mockGetSystemSuggestions(selectedApp);
 
     return (
       <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="max-w-6xl mx-auto space-y-6 pb-10 p-8">
@@ -224,7 +242,7 @@ export default function EmployeeDashboard() {
               {isAutoApproved && <Badge variant="success">Одобрено системой</Badge>}
             </div>
             <p className="text-slate-500 font-medium text-lg">{selectedApp.company}</p>
-            <p className="text-sm text-slate-400 mt-1">Создана {selectedApp.date} • ИНН: {selectedApp.inn}</p>
+            <p className="text-sm text-slate-400 mt-1">Создана {selectedApp.created_at ? new Date(selectedApp.created_at).toLocaleDateString('ru-RU') : selectedApp.date} • ИНН: {selectedApp.inn}</p>
           </div>
           <Badge variant={
             selectedApp.status === 'Одобрено' ? 'success' :
@@ -245,7 +263,6 @@ export default function EmployeeDashboard() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-
           {/* ЛЕВАЯ КОЛОНКА: Данные компании, Финансы и Проверки */}
           <div className="lg:col-span-2 space-y-6">
             <Card className="p-6">
@@ -254,34 +271,34 @@ export default function EmployeeDashboard() {
                 <div><p className="text-slate-500 mb-1">Компания</p><p className="font-medium">{selectedApp.company}</p></div>
                 <div><p className="text-slate-500 mb-1">Руководитель</p><p className="font-medium">{selectedApp.director || 'Не указан'}</p></div>
                 <div><p className="text-slate-500 mb-1">Телефон</p><p className="font-medium">{selectedApp.phone || 'Не указан'}</p></div>
-                <div><p className="text-slate-500 mb-1">Сфера</p><p className="font-medium">Торговля</p></div>
+                <div><p className="text-slate-500 mb-1">Сфера</p><p className="font-medium">{selectedApp.industry || 'Торговля'}</p></div>
               </div>
             </Card>
 
             <Card className="p-6">
               <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><TrendingUp className="w-5 h-5"/> Финансовые показатели</h3>
               <div className="space-y-3 text-sm">
-                <div className="flex justify-between border-b border-slate-50 pb-2"><span className="text-slate-500">Выручка за год</span><span className="font-medium">{(selectedApp.revenue || 50000000).toLocaleString()} ₽</span></div>
-                <div className="flex justify-between border-b border-slate-50 pb-2"><span className="text-slate-500">Чистая прибыль</span><span className="font-medium">{(selectedApp.profit || 3500000).toLocaleString()} ₽</span></div>
-                <div className="flex justify-between border-b border-slate-50 pb-2"><span className="text-slate-500">Обязательства</span><span className="font-medium">{(selectedApp.liabilities || 2000000).toLocaleString()} ₽</span></div>
+                <div className="flex justify-between border-b border-slate-50 pb-2"><span className="text-slate-500">Выручка за год</span><span className="font-medium">{(selectedApp.revenue || selectedApp.annual_revenue || 0).toLocaleString()} ₽</span></div>
+                <div className="flex justify-between border-b border-slate-50 pb-2"><span className="text-slate-500">Чистая прибыль</span><span className="font-medium">{(selectedApp.profit || 0).toLocaleString()} ₽</span></div>
+                <div className="flex justify-between border-b border-slate-50 pb-2"><span className="text-slate-500">Обязательства</span><span className="font-medium">{(selectedApp.liabilities || selectedApp.existing_debt || 0).toLocaleString()} ₽</span></div>
               </div>
             </Card>
 
-            {/* ПРАВКА ДАРЬИ: Проверка во внешних источниках */}
+            {/* Проверка во внешних источниках */}
             <Card className="p-6 border-t-4 border-slate-300">
               <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><FileText className="w-5 h-5"/> Проверка во внешних источниках</h3>
               <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3">
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-slate-700 font-medium">ЕГРЮЛ (Статус компании)</span>
-                  {selectedApp.external_checks?.egrul === 'active' ? (
+                  {selectedApp.egrul?.status === 'active' || selectedApp.external_checks?.egrul === 'active' ? (
                     <span className="text-green-600 font-bold flex items-center gap-1 bg-green-50 px-2 py-1 rounded-md"><Check className="w-4 h-4"/> Действует</span>
                   ) : (
-                    <span className="text-red-600 font-bold flex items-center gap-1 bg-red-50 px-2 py-1 rounded-md"><X className="w-4 h-4"/> Ликвидация</span>
+                    <span className="text-red-600 font-bold flex items-center gap-1 bg-red-50 px-2 py-1 rounded-md"><X className="w-4 h-4"/> Ликвидация / Неизвестно</span>
                   )}
                 </div>
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-slate-700 font-medium">ФНС (Налоговая задолженность)</span>
-                  {selectedApp.external_checks?.fns === 'no_debt' ? (
+                  {selectedApp.fns?.tax_debt === 0 || selectedApp.external_checks?.fns === 'no_debt' ? (
                     <span className="text-green-600 font-bold flex items-center gap-1 bg-green-50 px-2 py-1 rounded-md"><Check className="w-4 h-4"/> Нет долгов</span>
                   ) : (
                     <span className="text-red-600 font-bold flex items-center gap-1 bg-red-50 px-2 py-1 rounded-md"><AlertTriangle className="w-4 h-4"/> Есть долг</span>
@@ -289,7 +306,7 @@ export default function EmployeeDashboard() {
                 </div>
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-slate-700 font-medium">БКИ (Кредитная история)</span>
-                  {selectedApp.external_checks?.bki === 'ok' ? (
+                  {(selectedApp.bki?.max_overdue_days_12m === 0) || selectedApp.external_checks?.bki === 'ok' ? (
                     <span className="text-green-600 font-bold flex items-center gap-1 bg-green-50 px-2 py-1 rounded-md"><Check className="w-4 h-4"/> Без просрочек</span>
                   ) : (
                     <span className="text-red-600 font-bold flex items-center gap-1 bg-red-50 px-2 py-1 rounded-md"><AlertTriangle className="w-4 h-4"/> Просрочка</span>
@@ -308,27 +325,27 @@ export default function EmployeeDashboard() {
                 <p className="text-xs text-slate-500 mb-1">Вероятность дефолта (PD)</p>
                 <div className="flex items-end gap-3">
                   <span className={`text-5xl font-extrabold ${selectedApp.riskScore > 0.15 ? 'text-red-500' : 'text-green-500'}`}>
-                    {selectedApp.riskScore?.toFixed(2)}
+                    {selectedApp.riskScore?.toFixed(2) || '0.00'}
                   </span>
                   <span className={`px-2 py-1 rounded text-xs font-bold mb-2 ${selectedApp.riskScore > 0.15 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
                     {selectedApp.riskScore > 0.15 ? 'Высокий риск' : 'Низкий риск'}
                   </span>
                 </div>
                 <div className="w-full bg-slate-100 h-2 rounded-full mt-3 overflow-hidden">
-                  <div className={`h-full ${selectedApp.riskScore > 0.15 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${selectedApp.riskScore * 100}%` }} />
+                  <div className={`h-full ${selectedApp.riskScore > 0.15 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${(selectedApp.riskScore || 0) * 100}%` }} />
                 </div>
               </div>
 
-              {/* ПРАВКА ДАРЬИ: Ключевые факторы риска (SHAP) */}
+              {/* Ключевые факторы риска */}
               <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 mb-6 relative z-10">
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Ключевые факторы риска</p>
                 <div className="space-y-2 text-sm">
                   {selectedApp.risk_factors && selectedApp.risk_factors.length > 0 ? (
                     selectedApp.risk_factors.map((factor: any, i: number) => (
                       <div key={i} className="flex justify-between items-center">
-                        <span className="text-slate-700 text-xs">{factor.name}</span>
-                        <span className={`font-bold text-xs ${factor.direction === 'up' ? 'text-red-500' : 'text-green-500'}`}>
-                          {factor.direction === 'up' ? 'Повышает риск' : 'Снижает риск'}
+                        <span className="text-slate-700 text-xs">{factor.label || factor.name}</span>
+                        <span className={`font-bold text-xs ${factor.direction === 'up' || factor.direction === 'increases_risk' ? 'text-red-500' : 'text-green-500'}`}>
+                          {factor.direction === 'up' || factor.direction === 'increases_risk' ? 'Повышает риск' : 'Снижает риск'}
                         </span>
                       </div>
                     ))
@@ -371,34 +388,6 @@ export default function EmployeeDashboard() {
             <Card className="p-8 border-2 border-slate-200 shadow-lg bg-white rounded-3xl">
               <h3 className="font-bold text-2xl mb-6">Принятие решения</h3>
 
-              {/* Умные рекомендации */}
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-6 rounded-2xl mb-8">
-                <div className="flex items-center gap-2 mb-3">
-                  <Sparkles className="w-5 h-5 text-blue-600" />
-                  <h4 className="font-bold text-blue-900 text-lg">Умные рекомендации от системы</h4>
-                </div>
-                <p className="text-sm text-blue-800 mb-5 font-medium">{systemSuggestions.advice}</p>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {systemSuggestions.products.map((prod) => prod && (
-                    <div
-                      key={prod.id}
-                      onClick={() => setAltProductId(prod.id)}
-                      className={`bg-white p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 hover:shadow-md ${altProductId === prod.id ? 'border-blue-500 ring-2 ring-blue-100' : 'border-transparent'}`}
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center text-slate-600">
-                          {prod.icon === 'card' ? <CreditCard className="w-5 h-5"/> : prod.icon === 'money' ? <Building2 className="w-5 h-5"/> : <Zap className="w-5 h-5"/>}
-                        </div>
-                        <Badge variant="info">от {prod.rate}%</Badge>
-                      </div>
-                      <p className="font-bold text-slate-900 text-sm mb-1">{prod.name}</p>
-                      <p className="text-xs text-slate-500">До {prod.maxAmount.toLocaleString()} ₽</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-6">
                   <div className="bg-slate-50 p-5 rounded-xl border border-slate-200">
@@ -415,7 +404,6 @@ export default function EmployeeDashboard() {
                       <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
                     </div>
 
-                    {/* ПРАВКА ДАРЬИ: Возможность изменить сумму и срок */}
                     {altProductId && (
                       <div className="grid grid-cols-2 gap-3 mt-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
                         <div>
@@ -497,8 +485,8 @@ export default function EmployeeDashboard() {
             <PieChart className="w-5 h-5" /> Статистика
           </button>
 
-          <button onClick={resetData} className="flex items-center gap-3 px-4 py-3 mt-auto rounded-xl text-slate-400 hover:bg-slate-50 hover:text-alfa font-medium transition text-sm">
-            <RotateCcw className="w-4 h-4" /> Сбросить демо-данные
+          <button onClick={loadApplications} disabled={isLoading} className="flex items-center gap-3 px-4 py-3 mt-auto rounded-xl text-slate-400 hover:bg-slate-50 hover:text-alfa font-medium transition text-sm">
+            <RotateCcw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} /> Обновить данные
           </button>
         </div>
       </div>
@@ -560,7 +548,9 @@ export default function EmployeeDashboard() {
                     <tbody className="divide-y divide-slate-100">
                       {filteredApps.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="p-8 text-center text-slate-500">По вашему запросу ничего не найдено</td>
+                          <td colSpan={6} className="p-8 text-center text-slate-500">
+                            {isLoading ? 'Загрузка данных...' : 'По вашему запросу ничего не найдено'}
+                          </td>
                         </tr>
                       ) : (
                         filteredApps.map(app => (
@@ -568,7 +558,7 @@ export default function EmployeeDashboard() {
                             <td className="p-4 font-bold text-slate-900">{app.id}</td>
                             <td className="p-4 font-medium">{app.company}</td>
                             <td className="p-4 font-bold">{app.amount?.toLocaleString()} ₽</td>
-                            <td className="p-4 font-bold text-slate-500">{app.riskScore?.toFixed(2)}</td>
+                            <td className="p-4 font-bold text-slate-500">{app.riskScore?.toFixed(2) || '—'}</td>
                             <td className="p-4">
                               <Badge variant={
                                 app.status === 'Одобрено' ? 'success' :
