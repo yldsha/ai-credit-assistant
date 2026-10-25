@@ -1,211 +1,69 @@
 {
-  "_note": "Синтетические данные для моков. Формат: одна запись на ИНН, три блока — egrul, fns, bki. Генератор Даши должен выгружать данные в этом же формате. Поле industry — код отрасли как в датасете модели риска (trade, services, manufacturing, construction, it); industry_name — для интерфейса.",
+  "_note": "Синтетические данные для моков. Сценарии 1–5 — по тестовым сценариям Златы, 6–7 — дополнительные для демонстрации стоп-фактора и отказоустойчивости. Формат: одна запись на ИНН, три блока — egrul, fns, bki. Поле industry — код отрасли как в датасете модели риска (trade, services, manufacturing, construction, it); industry_name — для интерфейса.",
   "companies": [
     {
-      "inn": "7701000001",
-      "_scenario": "Хороший клиент — автоматическое одобрение",
-      "egrul": {
-        "ogrn": "1207700000011",
-        "name": "ООО «Ромашка»",
-        "legal_form": "OOO",
-        "status": "active",
-        "registration_date": "2020-03-15",
-        "okved": "47.19",
-        "industry": "trade",
-        "region": "Москва",
-        "employees": 15,
-        "director": "Иванов Иван Иванович",
-        "industry_name": "Торговля"
-      },
-      "fns": {
-        "tax_debt": 0,
-        "invalid_info_flag": false,
-        "mass_address_flag": false
-      },
-      "bki": {
-        "active_loans": 1,
-        "closed_loans": 3,
-        "max_overdue_days_12m": 0,
-        "overdue_count_12m": 0,
-        "inquiries_6m": 1
-      }
+      "inn": "770200000001",
+      "_scenario": "1. Автоодобрение — ИП Иван Петров, 1 млн ₽, 24 мес, закупка товаров, PD 2%",
+      "egrul": {"ogrn": "320770000000011", "name": "ИП Петров Иван Сергеевич", "legal_form": "IP", "status": "active",
+                "registration_date": "2020-05-18", "okved": "47.19", "industry": "trade", "industry_name": "Торговля",
+                "region": "Москва", "employees": 6, "director": "Петров Иван Сергеевич"},
+      "fns": {"tax_debt": 0, "invalid_info_flag": false, "mass_address_flag": false},
+      "bki": {"active_loans": 1, "closed_loans": 3, "max_overdue_days_12m": 0, "overdue_count_12m": 0, "inquiries_6m": 1}
     },
     {
-      "inn": "7701000002",
-      "_scenario": "Сигнал риска (налоговый долг) — ручная проверка",
-      "egrul": {
-        "ogrn": "1197700000022",
-        "name": "ООО «ТехноПлюс»",
-        "legal_form": "OOO",
-        "status": "active",
-        "registration_date": "2019-07-01",
-        "okved": "62.01",
-        "industry": "it",
-        "region": "Санкт-Петербург",
-        "employees": 8,
-        "director": "Петров Пётр Петрович",
-        "industry_name": "IT"
-      },
-      "fns": {
-        "tax_debt": 85000,
-        "invalid_info_flag": false,
-        "mass_address_flag": false
-      },
-      "bki": {
-        "active_loans": 2,
-        "closed_loans": 1,
-        "max_overdue_days_12m": 0,
-        "overdue_count_12m": 0,
-        "inquiries_6m": 2
-      }
+      "inn": "7702000002",
+      "_scenario": "2. Ручной разбор — ООО «Вектор», 2 млн ₽, 36 мес, оборудование, PD 9%, нестабильные обороты",
+      "egrul": {"ogrn": "1197700000022", "name": "ООО «Вектор»", "legal_form": "OOO", "status": "active",
+                "registration_date": "2019-09-02", "okved": "25.62", "industry": "manufacturing", "industry_name": "Производство",
+                "region": "Санкт-Петербург", "employees": 22, "director": "Кузнецова Ольга Викторовна"},
+      "fns": {"tax_debt": 0, "invalid_info_flag": false, "mass_address_flag": false},
+      "bki": {"active_loans": 2, "closed_loans": 2, "max_overdue_days_12m": 0, "overdue_count_12m": 0, "inquiries_6m": 3}
     },
     {
-      "inn": "7701000003",
-      "_scenario": "Просрочка больше 90 дней — отказ по стоп-фактору",
-      "egrul": {
-        "ogrn": "1187700000033",
-        "name": "ООО «СтройСнаб»",
-        "legal_form": "OOO",
-        "status": "active",
-        "registration_date": "2018-02-20",
-        "okved": "41.20",
-        "industry": "construction",
-        "region": "Казань",
-        "employees": 40,
-        "director": "Сидоров Сидор Сидорович",
-        "industry_name": "Строительство"
-      },
-      "fns": {
-        "tax_debt": 0,
-        "invalid_info_flag": false,
-        "mass_address_flag": false
-      },
-      "bki": {
-        "active_loans": 3,
-        "closed_loans": 2,
-        "max_overdue_days_12m": 120,
-        "overdue_count_12m": 3,
-        "inquiries_6m": 6
-      }
+      "inn": "770200000003",
+      "_scenario": "3. Отказ — ИП Алексей Смирнов, 1,5 млн ₽, 24 мес, развитие, PD 23%, просрочки",
+      "egrul": {"ogrn": "321770000000033", "name": "ИП Смирнов Алексей Петрович", "legal_form": "IP", "status": "active",
+                "registration_date": "2021-03-10", "okved": "56.10", "industry": "services", "industry_name": "Общепит",
+                "region": "Казань", "employees": 9, "director": "Смирнов Алексей Петрович"},
+      "fns": {"tax_debt": 0, "invalid_info_flag": false, "mass_address_flag": false},
+      "bki": {"active_loans": 3, "closed_loans": 1, "max_overdue_days_12m": 45, "overdue_count_12m": 3, "inquiries_6m": 6}
     },
     {
-      "inn": "7701000004",
-      "_scenario": "Компания в ликвидации — отказ по стоп-фактору",
-      "egrul": {
-        "ogrn": "1167700000044",
-        "name": "ООО «Маркет»",
-        "legal_form": "OOO",
-        "status": "liquidation",
-        "registration_date": "2016-11-10",
-        "okved": "47.11",
-        "industry": "trade",
-        "region": "Екатеринбург",
-        "employees": 5,
-        "director": "Кузнецов Кузьма Кузьмич",
-        "industry_name": "Торговля"
-      },
-      "fns": {
-        "tax_debt": 0,
-        "invalid_info_flag": false,
-        "mass_address_flag": false
-      },
-      "bki": {
-        "active_loans": 0,
-        "closed_loans": 1,
-        "max_overdue_days_12m": 0,
-        "overdue_count_12m": 0,
-        "inquiries_6m": 0
-      }
+      "inn": "7702000004",
+      "_scenario": "4. Крупная сумма — ООО «Прогресс», 5 млн ₽, 36 мес, оборотные средства, PD 3%",
+      "egrul": {"ogrn": "1157700000044", "name": "ООО «Прогресс»", "legal_form": "OOO", "status": "active",
+                "registration_date": "2015-06-15", "okved": "46.90", "industry": "trade", "industry_name": "Оптовая торговля",
+                "region": "Екатеринбург", "employees": 48, "director": "Волков Дмитрий Андреевич"},
+      "fns": {"tax_debt": 0, "invalid_info_flag": false, "mass_address_flag": false},
+      "bki": {"active_loans": 1, "closed_loans": 6, "max_overdue_days_12m": 0, "overdue_count_12m": 0, "inquiries_6m": 1}
     },
     {
-      "inn": "7701000005",
-      "_scenario": "Хороший клиент для крупной суммы (> 3 млн) — ручная проверка по сумме",
-      "egrul": {
-        "ogrn": "1157700000055",
-        "name": "ООО «Лидер»",
-        "legal_form": "OOO",
-        "status": "active",
-        "registration_date": "2015-05-05",
-        "okved": "49.41",
-        "industry": "services",
-        "region": "Новосибирск",
-        "employees": 60,
-        "director": "Смирнова Анна Сергеевна",
-        "industry_name": "Грузоперевозки"
-      },
-      "fns": {
-        "tax_debt": 0,
-        "invalid_info_flag": false,
-        "mass_address_flag": false
-      },
-      "bki": {
-        "active_loans": 1,
-        "closed_loans": 6,
-        "max_overdue_days_12m": 0,
-        "overdue_count_12m": 0,
-        "inquiries_6m": 1
-      }
+      "inn": "7702000005",
+      "_scenario": "5. Нужна информация — ООО «Меридиан», 800 тыс. ₽, 12 мес, оборудование, не хватает финансовых данных",
+      "egrul": {"ogrn": "1227700000055", "name": "ООО «Меридиан»", "legal_form": "OOO", "status": "active",
+                "registration_date": "2022-01-20", "okved": "62.01", "industry": "it", "industry_name": "IT",
+                "region": "Новосибирск", "employees": 11, "director": "Орлов Никита Романович"},
+      "fns": {"tax_debt": 0, "invalid_info_flag": false, "mass_address_flag": false},
+      "bki": {"active_loans": 0, "closed_loans": 1, "max_overdue_days_12m": 0, "overdue_count_12m": 0, "inquiries_6m": 1}
     },
     {
-      "inn": "7701000006",
-      "_scenario": "БКИ недоступно — заявка уходит на ручную проверку",
-      "_simulate": {
-        "bki": "unavailable"
-      },
-      "egrul": {
-        "ogrn": "1217700000066",
-        "name": "ООО «Сервис+»",
-        "legal_form": "OOO",
-        "status": "active",
-        "registration_date": "2021-09-01",
-        "okved": "95.11",
-        "industry": "services",
-        "region": "Самара",
-        "employees": 12,
-        "director": "Волков Михаил Сергеевич",
-        "industry_name": "Услуги"
-      },
-      "fns": {
-        "tax_debt": 0,
-        "invalid_info_flag": false,
-        "mass_address_flag": false
-      },
-      "bki": {
-        "active_loans": 1,
-        "closed_loans": 0,
-        "max_overdue_days_12m": 0,
-        "overdue_count_12m": 0,
-        "inquiries_6m": 1
-      }
+      "inn": "7702000006",
+      "_scenario": "6. Дополнительно: стоп-фактор — компания в ликвидации, отказ без модели",
+      "egrul": {"ogrn": "1167700000066", "name": "ООО «Маркет»", "legal_form": "OOO", "status": "liquidation",
+                "registration_date": "2016-11-10", "okved": "47.11", "industry": "trade", "industry_name": "Торговля",
+                "region": "Самара", "employees": 5, "director": "Белов Кирилл Игоревич"},
+      "fns": {"tax_debt": 0, "invalid_info_flag": false, "mass_address_flag": false},
+      "bki": {"active_loans": 0, "closed_loans": 1, "max_overdue_days_12m": 0, "overdue_count_12m": 0, "inquiries_6m": 0}
     },
     {
-      "inn": "770100000007",
-      "_scenario": "ИП, хороший клиент",
-      "egrul": {
-        "ogrn": "322770000000077",
-        "name": "ИП Сидоров Алексей Андреевич",
-        "legal_form": "IP",
-        "status": "active",
-        "registration_date": "2022-04-12",
-        "okved": "56.10",
-        "industry": "services",
-        "region": "Москва",
-        "employees": 4,
-        "director": "Сидоров Алексей Андреевич",
-        "industry_name": "Общепит"
-      },
-      "fns": {
-        "tax_debt": 0,
-        "invalid_info_flag": false,
-        "mass_address_flag": false
-      },
-      "bki": {
-        "active_loans": 0,
-        "closed_loans": 1,
-        "max_overdue_days_12m": 0,
-        "overdue_count_12m": 0,
-        "inquiries_6m": 0
-      }
+      "inn": "7702000007",
+      "_scenario": "7. Дополнительно: БКИ недоступно — заявка не падает, а уходит на ручную проверку",
+      "_simulate": {"bki": "unavailable"},
+      "egrul": {"ogrn": "1217700000077", "name": "ООО «Сервис+»", "legal_form": "OOO", "status": "active",
+                "registration_date": "2021-09-01", "okved": "95.11", "industry": "services", "industry_name": "Услуги",
+                "region": "Уфа", "employees": 12, "director": "Зайцева Марина Олеговна"},
+      "fns": {"tax_debt": 0, "invalid_info_flag": false, "mass_address_flag": false},
+      "bki": {"active_loans": 1, "closed_loans": 0, "max_overdue_days_12m": 0, "overdue_count_12m": 0, "inquiries_6m": 1}
     }
   ]
 }
