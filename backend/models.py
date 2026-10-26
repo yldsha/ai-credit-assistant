@@ -52,8 +52,8 @@ class Application(Base):
     client_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     assigned_employee_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
-    # Данные компании и продукта
-    inn = Column(String(20), index=True, nullable=True, default="7700000001")
+    # Данные компании и продукта (дефолт синхронизирован со сценарием 1 — ИП Петров Иван Сергеевич)
+    inn = Column(String(20), index=True, nullable=True, default="770200000001")
     company_name = Column(String(255), nullable=True)
     ogrn = Column(String(20), nullable=True)
     product_id = Column(String(100), nullable=True, default="loan_unsecured")
@@ -67,7 +67,6 @@ class Application(Base):
     has_collateral = Column(Boolean, default=False, nullable=False)
     collateral_type = Column(String(50), default="none", nullable=False)
     business_age_months = Column(Integer, nullable=False, default=12)
-    # ИСПРАВЛЕНО: default=None, чтобы сценарий «нужна информация» срабатывал при отсутствии выручки
     annual_revenue = Column(Float, nullable=True, default=None)
     monthly_turnover = Column(Float, nullable=False, default=2000000.0)
     monthly_expenses = Column(Float, nullable=False, default=1500000.0)
@@ -146,7 +145,7 @@ def init_db() -> None:
             default_users = [
                 User(
                     username="client_demo",
-                    full_name="Иван Предпринимателев (ООО «Ромашка»)",
+                    full_name="Петров Иван Сергеевич (ИП Петров Иван Сергеевич)",
                     role="client",
                 ),
                 User(
@@ -157,5 +156,15 @@ def init_db() -> None:
             ]
             db.add_all(default_users)
             db.commit()
+        else:
+            # Обновляем старое имя, если база уже была создана ранее
+            client_user = (
+                db.query(User).filter(User.username == "client_demo").first()
+            )
+            if client_user and "Ромашка" in (client_user.full_name or ""):
+                client_user.full_name = (
+                    "Петров Иван Сергеевич (ИП Петров Иван Сергеевич)"
+                )
+                db.commit()
     finally:
         db.close()

@@ -62,6 +62,9 @@ except Exception as predict_import_err:
 
 MOCKS_BASE_URL = os.getenv("MOCKS_BASE_URL", "http://mocks:8001")
 
+# Код подписания ЭДО (проверяется на сервере в /sign и /action)
+VALID_SIGN_OTP_CODE = os.getenv("SIGN_OTP_CODE", "4821")
+
 # ==================== КОНТРОЛЬ ПЕРЕХОДОВ СТАТУСОВ ====================
 
 ALLOWED_EMPLOYEE_DECISION_STATUSES = {
@@ -80,13 +83,26 @@ POST_APPROVAL_ACTIONS: dict[str, dict[str, Any]] = {
     "sign_contract": {
         "allowed_from": {"approved", "counter_offer", "offer_accepted"},
         "new_status": "contract_signed",
-        "comment": "Кредитный договор подписан клиентом по ЭДО",
+        "comment": "Кредитный договор подписан клиентом по ЭДО (код 4821 подтверждён)",
     },
     "disburse": {
         "allowed_from": {"approved", "offer_accepted", "contract_signed"},
         "new_status": "disbursed",
         "comment": "Кредитные средства зачислены на расчётный счёт клиента (выдан)",
     },
+}
+
+# Базовые остатки на расчётном счёте для демо-компаний (пересчитываются при выдаче кредита)
+DEMO_ACCOUNT_BALANCES: dict[str, int] = {
+    "770200000001": 1250000,
+    "7702000001": 1250000,
+    "7702000002": 1840000,
+    "770200000003": 320000,
+    "7702000003": 320000,
+    "7702000004": 6400000,
+    "7702000005": 950000,
+    "7702000006": 110000,
+    "7702000007": 1420000,
 }
 
 # Хардкод PD для 5 демо-клиентов из seed.json (для остальных вызывается модель Даши)
@@ -220,9 +236,6 @@ async def fetch_mock_endpoint(
     timeout: float = 3.0,
     retries: int = 1,
 ) -> httpx.Response:
-    """
-    Асинхронный HTTP-запрос к микросервису моков с таймаутом 3 секунды и 1 ретраем.
-    """
     url = f"{MOCKS_BASE_URL.rstrip('/')}/{endpoint.lstrip('/')}"
     last_exc: Exception | None = None
 
@@ -274,17 +287,60 @@ def calculate_business_age_months(
         return fallback
 
 
+def compute_company_profile(
+    inn: str | None,
+    egrul_data: dict[str, Any] | None,
+    monthly_turnover: float = 2000000.0,
+    disbursed_amount: int = 0,
+) -> dict[str, Any]:
+    """
+    Формирует единый согласованный профиль компании и клиента для шапки кабинета:
+    ФИО руководителя, название компании, число сотрудников из ЕГРЮЛ и динамический остаток на счёте.
+    """
+    egrul = egrul_data or {}
+    norm_inn = inn or egrul.get("inn") or "770200000001"
+    company_name = (
+        egrul.get("name")
+        or egrul.get("company_name")
+        or "ИП Петров Иван Сергеевич"
+    )
+    director = egrul.get("director") or "Петров Иван Сергеевич"
+    employees = int(egrul.get("employees") if egrul.get("employees") is not None else 6)
+    region = egrul.get("region") or "Москва"
+    industry_name = egrul.get("industry_name") or "Торговля"
+    ogrn = egrul.get("ogrn") or "320770000000011"
+    legal_form = egrul.get("legal_form") or "IP"
+    registration_date = egrul.get("registration_date") or "2020-05-18"
+
+    base_balance = DEMO_ACCOUNT_BALANCES.get(
+        norm_inn,
+        round(float(monthly_turnover or 2000000.0) * 0.625),
+    )
+    total_balance = int(base_balance) + int(disbursed_amount)
+
+    return {
+        "inn": norm_inn,
+        "ogrn": ogrn,
+        "company_name": company_name,
+        "director": director,
+        "full_name": director,
+        "employees": employees,
+        "region": region,
+        "industry": egrul.get("industry") or "trade",
+        "industry_name": industry_name,
+        "legal_form": legal_form,
+        "registration_date": registration_date,
+        "business_age_months": calculate_business_age_months(registration_date, 12),
+        "account_balance": total_balance,
+    }
+
+
 def format_recommendations_for_client(
     rec_result: dict[str, Any],
     products: list[dict[str, Any]],
     amount: int,
     term_months: int,
 ) -> dict[str, Any]:
-    """
-    Форматирует ответ recommend() для клиентского фронтенда:
-    гарантирует наличие полей product_id, name, label («Лучший вариант» / «Альтернатива»),
-    rate_from, payment (monthly, overpayment) и reasons, а также скрывает служебные score/ranked_by.
-    """
     prod_map = {p["id"]: p for p in products}
     cfg = get_engine_config()
     clean_recs: list[dict[str, Any]] = []
@@ -305,7 +361,6 @@ def format_recommendations_for_client(
             else prod.get("rate_from", prod.get("rate_calc", 0))
         )
 
-        # Гарантируем структуру payment: {monthly, overpayment}
         payment_obj = r_copy.get("payment")
         if not isinstance(payment_obj, dict) or "monthly" not in payment_obj:
             monthly_val = (
@@ -388,10 +443,6 @@ def record_status_change(
 
 
 def extract_15_features(app_obj: Application) -> dict[str, Any]:
-    """
-    Строгий маппинг 15 полей заявки в словарь для модели scoring/risk_model/predict.py.
-    Поле purpose передаётся напрямую из заявки (например, cash_gap, equipment, working_capital).
-    """
     collateral_type_val = (
         app_obj.collateral_type
         if app_obj.has_collateral and app_obj.collateral_type
@@ -446,7 +497,7 @@ class DraftApplicationCreate(BaseModel):
     )
     bki_consent: bool = Field(default=True, description="Согласие на запрос в БКИ")
 
-    # 15 признаков для predict.py (annual_revenue по умолчанию None!)
+    # 15 признаков для predict.py
     amount: int = Field(..., gt=0, example=1500000)
     term_months: int = Field(..., gt=0, example=24)
     purpose: str = Field(..., example="equipment")
@@ -484,10 +535,30 @@ class SupplementInfoRequest(BaseModel):
     product_id: str | None = Field(default=None)
 
 
+class SignContractPayload(BaseModel):
+    code: str | None = Field(
+        default=None,
+        description="Код подтверждения из СМС / ЭДО (ожидается 4821)",
+    )
+    otp_code: str | None = Field(
+        default=None,
+        description="Алиас для кода подтверждения (ожидается 4821)",
+    )
+    comment: str | None = Field(default=None)
+
+
 class PostApprovalActionRequest(BaseModel):
     action: Literal["accept_offer", "sign_contract", "disburse"] = Field(
         ...,
         description="Действие после одобрения: принять предложение, подписать договор, выдать кредит",
+    )
+    code: str | None = Field(
+        default=None,
+        description="Код подтверждения ЭДО (обязателен для sign_contract, ожидается 4821)",
+    )
+    otp_code: str | None = Field(
+        default=None,
+        description="Алиас для кода подтверждения ЭДО",
     )
     comment: str | None = Field(default=None, description="Комментарий к действию")
 
@@ -562,7 +633,8 @@ def get_available_client_actions(status: str) -> list[dict[str, str]]:
 
 def serialize_for_client(app_obj: Application) -> dict[str, Any]:
     """
-    Представление заявки для клиента (без PD, risk_factors, employee_reasons и сырых ответов моков).
+    Представление заявки для клиента (без PD, risk_factors и employee_reasons,
+    но с согласованными данными профиля компании из ЕГРЮЛ: director, employees, account_balance).
     """
     decision = app_obj.decision_result or {}
     recs_data = app_obj.recommendations_data or {}
@@ -574,13 +646,33 @@ def serialize_for_client(app_obj: Application) -> dict[str, Any]:
         term_months=int(app_obj.term_months),
     )
 
+    offer = decision.get("offer") or {}
+    disbursed_add = (
+        int(offer.get("amount") or app_obj.amount)
+        if app_obj.status == "disbursed"
+        else 0
+    )
+    profile = compute_company_profile(
+        inn=app_obj.inn,
+        egrul_data=app_obj.egrul_data,
+        monthly_turnover=float(app_obj.monthly_turnover or 2000000.0),
+        disbursed_amount=disbursed_add,
+    )
+
     return {
         "id": app_obj.id,
         "client_id": app_obj.client_id,
         "status": app_obj.status,
         "inn": app_obj.inn,
-        "company_name": app_obj.company_name,
-        "ogrn": app_obj.ogrn,
+        "company_name": app_obj.company_name or profile["company_name"],
+        "ogrn": app_obj.ogrn or profile["ogrn"],
+        # Согласованные поля компании и кабинета клиента (чтобы не было расхождений с ЕГРЮЛ)
+        "director": profile["director"],
+        "employees": profile["employees"],
+        "region": profile["region"],
+        "industry_name": profile["industry_name"],
+        "account_balance": profile["account_balance"],
+        "client_profile": profile,
         "product_id": app_obj.product_id,
         "bki_consent": app_obj.bki_consent,
         "amount": app_obj.amount,
@@ -621,6 +713,19 @@ def serialize_for_employee(app_obj: Application) -> dict[str, Any]:
     employee_reasons, flags, metrics, ответы ЕГРЮЛ/ФНС/БКИ и флаг can_make_decision.
     """
     decision = app_obj.decision_result or {}
+    offer = decision.get("offer") or {}
+    disbursed_add = (
+        int(offer.get("amount") or app_obj.amount)
+        if app_obj.status == "disbursed"
+        else 0
+    )
+    profile = compute_company_profile(
+        inn=app_obj.inn,
+        egrul_data=app_obj.egrul_data,
+        monthly_turnover=float(app_obj.monthly_turnover or 2000000.0),
+        disbursed_amount=disbursed_add,
+    )
+
     return {
         "id": app_obj.id,
         "client_id": app_obj.client_id,
@@ -628,8 +733,14 @@ def serialize_for_employee(app_obj: Application) -> dict[str, Any]:
         "status": app_obj.status,
         "can_make_decision": app_obj.status in ALLOWED_EMPLOYEE_DECISION_STATUSES,
         "inn": app_obj.inn,
-        "company_name": app_obj.company_name,
-        "ogrn": app_obj.ogrn,
+        "company_name": app_obj.company_name or profile["company_name"],
+        "ogrn": app_obj.ogrn or profile["ogrn"],
+        "director": profile["director"],
+        "employees": profile["employees"],
+        "region": profile["region"],
+        "industry_name": profile["industry_name"],
+        "account_balance": profile["account_balance"],
+        "client_profile": profile,
         "product_id": app_obj.product_id,
         "bki_consent": app_obj.bki_consent,
         "amount": app_obj.amount,
@@ -678,14 +789,6 @@ def serialize_for_employee(app_obj: Application) -> dict[str, Any]:
 
 
 async def process_application_pipeline(application_id: int) -> None:
-    """
-    Фоновая обработка заявки:
-    1. Статус 'checking' -> HTTP-запросы к http://mocks:8001 (/egrul, /fns, /bki).
-       Если БКИ возвращает 503 — перевод в 'manual_review' и завершение конвейера.
-    2. Расчёт business_age_months по registration_date из ЕГРЮЛ.
-    3. Статус 'scoring' -> вызов модели Даши (scoring/risk_model/predict.py) + эталонные PD для 5 демо-ИНН.
-    4. Вызов decide() по выбранному клиентом product_id -> сохранение итогов в БД.
-    """
     db = SessionLocal()
     try:
         app_obj = db.query(Application).filter(Application.id == application_id).first()
@@ -705,7 +808,6 @@ async def process_application_pipeline(application_id: int) -> None:
 
         inn = app_obj.inn or ""
 
-        # Запросы к ЕГРЮЛ и ФНС
         try:
             egrul_resp, fns_resp = await asyncio.gather(
                 fetch_mock_endpoint(f"/egrul/{inn}"),
@@ -743,11 +845,11 @@ async def process_application_pipeline(application_id: int) -> None:
         app_obj.egrul_data = egrul_data
         app_obj.fns_data = fns_data
         app_obj.company_name = (
-            app_obj.company_name
-            or egrul_data.get("name")
+            egrul_data.get("name")
             or egrul_data.get("company_name")
+            or app_obj.company_name
         )
-        app_obj.ogrn = app_obj.ogrn or egrul_data.get("ogrn")
+        app_obj.ogrn = egrul_data.get("ogrn") or app_obj.ogrn
 
         if egrul_data.get("registration_date"):
             app_obj.business_age_months = calculate_business_age_months(
@@ -774,7 +876,6 @@ async def process_application_pipeline(application_id: int) -> None:
             )
             return
 
-        # Если БКИ возвращает 503 — переводим в manual_review и завершаем пайплайн
         if bki_resp.status_code == 503:
             app_obj.bki_data = None
             app_obj.decision_result = {
@@ -929,6 +1030,53 @@ def get_products() -> list[dict[str, Any]]:
     return load_products()
 
 
+@app.get(
+    "/client/profile",
+    summary="Профиль клиента и компании для шапки личного кабинета (без рассинхрона с ЕГРЮЛ)",
+)
+async def get_client_profile(
+    inn: str | None = Query(
+        default=None,
+        description="ИНН компании (если не указан — берётся из последней заявки клиента или 770200000001)",
+    ),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    last_app = (
+        db.query(Application)
+        .order_by(Application.created_at.desc())
+        .first()
+    )
+    target_inn = inn or (last_app.inn if last_app and last_app.inn else "770200000001")
+
+    egrul_data = None
+    if last_app and last_app.inn == target_inn and last_app.egrul_data:
+        egrul_data = last_app.egrul_data
+    else:
+        egrul_data = await fetch_egrul_http(target_inn)
+
+    # Суммируем все выданные кредиты (disbursed) по данному ИНН для честного остатка на счёте
+    disbursed_apps = (
+        db.query(Application)
+        .filter(
+            Application.inn == target_inn,
+            Application.status == "disbursed",
+        )
+        .all()
+    )
+    disbursed_sum = 0
+    for a in disbursed_apps:
+        offer = (a.decision_result or {}).get("offer") or {}
+        disbursed_sum += int(offer.get("amount") or a.amount or 0)
+
+    turnover = float(last_app.monthly_turnover) if last_app else 2000000.0
+    return compute_company_profile(
+        inn=target_inn,
+        egrul_data=egrul_data,
+        monthly_turnover=turnover,
+        disbursed_amount=disbursed_sum,
+    )
+
+
 @app.post(
     "/recommend",
     summary="Подбор и ранжирование кредитных продуктов на бэкенде без сохранения в БД",
@@ -964,7 +1112,10 @@ def recommend_products_endpoint(
     "/applications/autofill/{inn}",
     summary="Предзаполнение данных компании по ИНН из микросервиса ЕГРЮЛ",
 )
-async def autofill_by_inn(inn: str) -> dict[str, Any]:
+async def autofill_by_inn(
+    inn: str,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
     try:
         resp = await fetch_mock_endpoint(f"/egrul/{inn}")
     except Exception as exc:
@@ -982,15 +1133,29 @@ async def autofill_by_inn(inn: str) -> dict[str, Any]:
         )
 
     data = resp.json()
-    business_age = calculate_business_age_months(
-        data.get("registration_date"),
-        fallback=12,
+    disbursed_apps = (
+        db.query(Application)
+        .filter(Application.inn == inn, Application.status == "disbursed")
+        .all()
+    )
+    disbursed_sum = sum(
+        int(((a.decision_result or {}).get("offer") or {}).get("amount") or a.amount or 0)
+        for a in disbursed_apps
+    )
+    profile = compute_company_profile(
+        inn=inn,
+        egrul_data=data,
+        disbursed_amount=disbursed_sum,
     )
 
     return {
         **data,
-        "company_name": data.get("name") or data.get("company_name"),
-        "business_age_months": business_age,
+        "company_name": profile["company_name"],
+        "director": profile["director"],
+        "employees": profile["employees"],
+        "business_age_months": profile["business_age_months"],
+        "account_balance": profile["account_balance"],
+        "client_profile": profile,
     }
 
 
@@ -1035,7 +1200,6 @@ async def create_application_draft(
         term_months=payload.term_months,
     )
 
-    # Сохраняем именно тот product_id, который выбрал и прислал клиент
     valid_ids = {p["id"] for p in products}
     selected_product_id = payload.product_id
     if not selected_product_id or selected_product_id not in valid_ids:
@@ -1168,7 +1332,6 @@ async def submit_application(
             detail=f"Нельзя отправить заявку из статуса '{app_obj.status}'",
         )
 
-    # Если фронт передал product_id при отправке заявки — обновляем перед скорингом и decide()
     if payload and payload.product_id:
         valid_ids = {p["id"] for p in load_products()}
         if payload.product_id in valid_ids:
@@ -1189,7 +1352,19 @@ async def submit_application(
     return serialize_for_client(app_obj)
 
 
-# ==================== ШАГ 7: ДЕЙСТВИЯ ПОСЛЕ ОДОБРЕНИЯ ====================
+# ==================== ШАГ 7: ДЕЙСТВИЯ ПОСЛЕ ОДОБРЕНИЯ (С ПРОВЕРКОЙ КОДА 4821) ====================
+
+
+def _verify_sign_otp_code(code: str | None) -> None:
+    """
+    Проверяет одноразовый СМС/ЭДО-код при подписании кредитного договора на бэкенде.
+    """
+    cleaned = (code or "").strip()
+    if cleaned != VALID_SIGN_OTP_CODE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Неверный код подтверждения ЭДО. Для подписания договора введите код {VALID_SIGN_OTP_CODE}.",
+        )
 
 
 def _execute_post_approval_transition(
@@ -1224,7 +1399,7 @@ def _execute_post_approval_transition(
 
 @app.post(
     "/applications/{application_id}/action",
-    summary="Универсальный эндпоинт шага 7: принять предложение, подписать, выдать",
+    summary="Универсальный эндпоинт шага 7: принять предложение, подписать (с кодом 4821), выдать",
 )
 def perform_post_approval_action(
     application_id: int,
@@ -1234,6 +1409,10 @@ def perform_post_approval_action(
     app_obj = db.query(Application).filter(Application.id == application_id).first()
     if not app_obj:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
+
+    if payload.action == "sign_contract":
+        _verify_sign_otp_code(payload.code or payload.otp_code)
+
     return _execute_post_approval_transition(
         db=db,
         app_obj=app_obj,
@@ -1258,16 +1437,32 @@ def accept_application_offer(
 
 @app.post(
     "/applications/{application_id}/sign",
-    summary="Подписать кредитный договор",
+    summary="Подписать кредитный договор (обязательна проверка кода 4821 на бэкенде)",
 )
 def sign_application_contract(
     application_id: int,
+    code: str | None = Query(
+        default=None,
+        description="Код подтверждения ЭДО (можно передать в query ?code=4821 или в JSON body)",
+    ),
+    payload: SignContractPayload | None = Body(default=None),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     app_obj = db.query(Application).filter(Application.id == application_id).first()
     if not app_obj:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    return _execute_post_approval_transition(db, app_obj, "sign_contract")
+
+    submitted_code = code or (
+        (payload.code or payload.otp_code) if payload else None
+    )
+    _verify_sign_otp_code(submitted_code)
+
+    return _execute_post_approval_transition(
+        db=db,
+        app_obj=app_obj,
+        action_key="sign_contract",
+        custom_comment=payload.comment if payload else None,
+    )
 
 
 @app.post(
