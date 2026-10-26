@@ -33,7 +33,7 @@ from recommender import Request as RecRequest, load_products, recommend  # noqa:
 from engine import DecisionInput, decide, load_config, monthly_payment  # noqa: E402
 
 try:
-    from predict import FEATURES, predict_with_explanation  # noqa: E402
+    from predict import BASE_FEATURES as FEATURES, predict_with_explanation  # noqa: E402
 except Exception as predict_import_err:
     FEATURES = [
         "amount",

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, type ReactNode, type Dispatch, type SetStateAction } from 'react';
 import { initialApplications } from '../mocks/mockData';
 
 interface AppContextType {
@@ -7,10 +7,12 @@ interface AppContextType {
   clientName: string;
   employeeName: string;
   apps: any[];
-  setApps: (apps: any[]) => void;
+  // ИСПРАВЛЕНИЕ: Добавляем Dispatch, чтобы React понимал setApps(prev => ...)
+  setApps: Dispatch<SetStateAction<any[]>>;
   docs: Record<string, any>;
-  setDocs: (docs: Record<string, any>) => void;
-  resetData: () => void; // <-- НОВОЕ
+  // ИСПРАВЛЕНИЕ: То же самое для документов
+  setDocs: Dispatch<SetStateAction<Record<string, any>>>;
+  resetData: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -21,6 +23,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [docs, setDocs] = useState<Record<string, any>>({});
 
   useEffect(() => {
+    // Твоя логика: если в LocalStorage пусто, грузим стартовые заявки
     const savedApps = localStorage.getItem('mock_apps');
     if (!savedApps) {
       localStorage.setItem('mock_apps', JSON.stringify(initialApplications));
@@ -36,9 +39,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const resetData = () => {
     localStorage.removeItem('mock_apps');
     localStorage.removeItem('mock_docs');
+    // При сбросе возвращаем стартовые заявки, чтобы демо не было пустым
     setApps(initialApplications);
     setDocs({});
-    window.location.reload(); // Принудительная перезагрузка для сброса всех стейтов
+    window.location.reload();
   };
 
   return (

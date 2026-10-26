@@ -84,6 +84,10 @@ export async function getApplications(inn: string) {
   return apps;
 }
 
+// Пустое поле формы -> null, чтобы бэкенд не получал 0 вместо «не указано»
+const toNum = (v: any): number | null =>
+  v === '' || v === null || v === undefined || isNaN(Number(v)) ? null : Number(v);
+
 export async function createDraft(data: any) {
   const payload = {
     inn: data.inn,
@@ -95,12 +99,12 @@ export async function createDraft(data: any) {
     has_collateral: data.collateral === 'С залогом',
     collateral_type: data.collateral === 'С залогом' ? 'real_estate' : 'none',
     business_age_months: data.businessAgeMonths || 24,
-    annual_revenue: data.revenue,
+    annual_revenue: toNum(data.revenue),
     // ИСПРАВЛЕНО: Берем реальные значения из формы, если они есть
-    monthly_turnover: data.monthlyTurnover || (data.revenue / 12),
-    monthly_expenses: data.monthlyExpenses || (data.liabilities / 12),
-    existing_debt: data.liabilities,
-    monthly_debt_payments: data.liabilities / 24,
+    monthly_turnover: toNum(data.monthlyTurnover) ?? (toNum(data.revenue) ?? 0) / 12,
+    monthly_expenses: toNum(data.monthlyExpenses) ?? 0,
+    existing_debt: toNum(data.liabilities) ?? 0,
+    monthly_debt_payments: toNum(data.monthlyDebtPayments) ?? (toNum(data.liabilities) ?? 0) / 24,
     overdue_days: 0,
     collateral_value: 0,
     industry: "trade",
@@ -189,4 +193,20 @@ export async function autofillCompanyByInn(inn: string) {
   }
 
   return res.json();
+}
+
+// === ПОДПИСАНИЕ ДОГОВОРА ===
+export async function signContract(id: number, otpCode: string) {
+  const res = await fetch(`${API_URL}/applications/${id}/sign`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ otp_code: otpCode })
+  });
+
+  if (!res.ok) {
+    throw new Error('Неверный код подтверждения или ошибка сервера');
+  }
+
+  const data = await res.json();
+  return normalizeApplication(data);
 }

@@ -8,7 +8,8 @@ import {
   getApplicationById,
   uploadDocument,
   getDocuments,
-  autofillCompanyByInn
+  autofillCompanyByInn,
+  signContract // <--- ДОБАВЛЕН ИМПОРТ ФУНКЦИИ ПОДПИСАНИЯ
 } from '../services/api';
 import { recommendProducts } from '../services/recommender';
 import {
@@ -61,9 +62,9 @@ export default function ClientCabinet() {
     ogrn: '1234567890123',
     companyName: 'ООО «Ромашка»',
     region: 'Москва',
-    revenue: 50000000,
-    profit: 3500000,
-    liabilities: 2000000,
+    revenue: '',
+    profit: '',
+    liabilities: '',
     director: 'Иванов Иван Иванович',
     phone: '+7 (999) 123-45-67',
     email: 'ivan@romashka.ru',
@@ -71,13 +72,13 @@ export default function ClientCabinet() {
     okved: '47.11 Торговля розничная',
     businessAgeMonths: 24,
     employeesCount: 0,
-    monthlyTurnover: 5000000,   // <--- ДОБАВЛЕНО ПОЛЕ
-    monthlyExpenses: 3500000    // <--- ДОБАВЛЕНО ПОЛЕ
+    monthlyTurnover: '',
+    monthlyExpenses: '',
+    monthlyDebtPayments: ''
   });
   const [result, setResult] = useState<any>(null);
   const [isAutofilling, setIsAutofilling] = useState(false);
 
-  // Загрузка заявок и документов при монтировании
   useEffect(() => {
     loadData();
   }, []);
@@ -93,7 +94,6 @@ export default function ClientCabinet() {
     }
   };
 
-  // Асинхронный вызов рекомендательной модели с учетом цели
   useEffect(() => {
     let isMounted = true;
     const fetchRecs = async () => {
@@ -118,7 +118,6 @@ export default function ClientCabinet() {
     };
   }, [calcParams]);
 
-  // Поллинг статуса заявки
   useEffect(() => {
     if (!viewingApp) return;
     const isProcessing = ['Проверка данных', 'Оценка рисков', 'На рассмотрении'].includes(viewingApp.status);
@@ -139,7 +138,6 @@ export default function ClientCabinet() {
     return () => clearInterval(interval);
   }, [viewingApp, setApps]);
 
-  // АВТОЗАПОЛНЕНИЕ ПО ИНН
   useEffect(() => {
     if (formData.inn.length !== 10 && formData.inn.length !== 12) return;
 
@@ -176,7 +174,6 @@ export default function ClientCabinet() {
     };
   }, [formData.inn]);
 
-  // Сброс шагов подписания при открытии другой заявки
   useEffect(() => {
     setSignStep('offer');
     setTermsAccepted(false);
@@ -725,16 +722,27 @@ export default function ClientCabinet() {
 
                 <div className="flex gap-3 justify-center">
                   <Button variant="outline" onClick={() => setSignStep('contract')}>Назад</Button>
-                  {/* TODO: Когда Костя сделает /sign, заменить этот локальный код на API-запрос */}
-                  <Button onClick={() => {
-                    if (otpInput === '4821') {
-                      setSignStep('signed');
-                      setTimeout(() => setSignStep('disbursed'), 2000);
-                    } else {
+                  <Button onClick={async () => {
+                    if (!otpInput) {
                       setOtpError(true);
+                      return;
                     }
-                  }} className="bg-green-500 hover:bg-green-600 text-white px-8">
-                    Подтвердить
+                    try {
+                      setIsSubmitting(true);
+                      const updatedApp = await signContract(viewingApp.id, otpInput);
+                      setSignStep('signed');
+                      setApps(prev => prev.map(a => a.id === viewingApp.id ? updatedApp : a));
+                      setViewingApp(updatedApp);
+                      setTimeout(() => setSignStep('disbursed'), 2000);
+                      toast.success('Договор успешно подписан!');
+                    } catch (error: any) {
+                      setOtpError(true);
+                      toast.error(error.message || 'Неверный код');
+                    } finally {
+                      setIsSubmitting(false);
+                    }
+                  }} disabled={isSubmitting} className="bg-green-500 hover:bg-green-600 text-white px-8">
+                    {isSubmitting ? 'Проверка...' : 'Подтвердить'}
                   </Button>
                 </div>
               </div>
@@ -962,13 +970,13 @@ export default function ClientCabinet() {
           <>
             <h3 className="text-xl font-bold mb-6">Финансовые показатели</h3>
             <div className="space-y-4">
-              <div><label className="text-sm text-slate-500 mb-1 block">Выручка (₽)</label><input type="number" value={formData.revenue} onChange={e => setFormData({...formData, revenue: Number(e.target.value)})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
-              <div><label className="text-sm text-slate-500 mb-1 block">Чистая прибыль (₽)</label><input type="number" value={formData.profit} onChange={e => setFormData({...formData, profit: Number(e.target.value)})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
-              <div><label className="text-sm text-slate-500 mb-1 block">Кредитные обязательства (₽)</label><input type="number" value={formData.liabilities} onChange={e => setFormData({...formData, liabilities: Number(e.target.value)})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
+              <div><label className="text-sm text-slate-500 mb-1 block">Выручка (₽)</label><input type="number" value={formData.revenue} onChange={e => setFormData({...formData, revenue: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
+              <div><label className="text-sm text-slate-500 mb-1 block">Чистая прибыль (₽)</label><input type="number" value={formData.profit} onChange={e => setFormData({...formData, profit: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
+              <div><label className="text-sm text-slate-500 mb-1 block">Кредитные обязательства (₽)</label><input type="number" value={formData.liabilities} onChange={e => setFormData({...formData, liabilities: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
+              <div><label className="text-sm text-slate-500 mb-1 block">Платежи по кредитам в месяц (₽)</label><input type="number" value={formData.monthlyDebtPayments} onChange={e => setFormData({...formData, monthlyDebtPayments: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
 
-              {/* ДОБАВЛЕНЫ ПОЛЯ ОБОРОТА И РАСХОДОВ */}
-              <div><label className="text-sm text-slate-500 mb-1 block">Оборот в месяц (₽)</label><input type="number" value={formData.monthlyTurnover} onChange={e => setFormData({...formData, monthlyTurnover: Number(e.target.value)})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
-              <div><label className="text-sm text-slate-500 mb-1 block">Расходы в месяц (₽)</label><input type="number" value={formData.monthlyExpenses} onChange={e => setFormData({...formData, monthlyExpenses: Number(e.target.value)})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
+              <div><label className="text-sm text-slate-500 mb-1 block">Оборот в месяц (₽)</label><input type="number" value={formData.monthlyTurnover} onChange={e => setFormData({...formData, monthlyTurnover: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
+              <div><label className="text-sm text-slate-500 mb-1 block">Расходы в месяц (₽)</label><input type="number" value={formData.monthlyExpenses} onChange={e => setFormData({...formData, monthlyExpenses: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
 
             </div>
             <div className="flex gap-4 mt-8"><Button variant="outline" onClick={() => setStep(2)}>Назад</Button><Button className="flex-1" onClick={() => setStep(4)}>Далее</Button></div>
@@ -1103,7 +1111,7 @@ export default function ClientCabinet() {
 
   return (
     <div className="flex h-[calc(100vh-64px)] bg-slate-50">
-      <div className="w-64 bg-white border-r border-slate-200 flex flex-col hidden md:flex">
+      <div className="w-64 bg-white border-r border-slate-200 hidden md:flex flex-col">
         <div className="p-6 border-b border-slate-100 flex items-center gap-3">
           <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center text-alfa font-bold">
             {formData.director ? formData.director[0] : clientName[0]}
