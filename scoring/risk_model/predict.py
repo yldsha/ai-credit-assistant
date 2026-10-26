@@ -8,8 +8,8 @@ from catboost import Pool
 # Путь к обученной модели в той же папке, что и predict.py
 MODEL_PATH = Path(__file__).resolve().parent / "risk_model.joblib"
 
-# Признаки должны совпадать с теми, на которых обучалась модель
-FEATURES = [
+# Базовые признаки, которые приходят из заявки
+BASE_FEATURES = [
     "amount",
     "term_months",
     "purpose",
@@ -25,6 +25,14 @@ FEATURES = [
     "overdue_days",
     "collateral_value",
     "industry",
+]
+
+# Полный список признаков, которые ждёт новая модель
+FEATURES = BASE_FEATURES + [
+    "expense_ratio",
+    "debt_ratio",
+    "loan_ratio",
+    "collateral_coverage",
 ]
 
 # Категориальные признаки, использованные при обучении CatBoost
@@ -57,15 +65,25 @@ def predict_pd(application: dict) -> float:
     if not isinstance(application, dict):
         raise TypeError("application должен быть словарём")
 
-    missing = [feature for feature in FEATURES if feature not in application]
+    # Проверяем наличие только базовых полей
+    missing = [feature for feature in BASE_FEATURES if feature not in application]
     if missing:
         raise ValueError(
             f"В заявке отсутствуют обязательные поля: {missing}"
         )
 
+    # Делаем копию, чтобы не изменять исходный словарь
+    app = dict(application)
+    
+    # Добавляем расчёт новых признаков (clip(lower=1) заменяем на max(..., 1))
+    app["expense_ratio"] = app["monthly_expenses"] / max(app["monthly_turnover"], 1)
+    app["debt_ratio"] = app["monthly_debt_payments"] / max(app["monthly_turnover"], 1)
+    app["loan_ratio"] = app["amount"] / max(app["annual_revenue"], 1)
+    app["collateral_coverage"] = app["collateral_value"] / max(app["amount"], 1)
+
     # Передаём модели только признаки в правильном порядке
     X = pd.DataFrame(
-        [{feature: application[feature] for feature in FEATURES}],
+        [{feature: app[feature] for feature in FEATURES}],
         columns=FEATURES,
     )
 
@@ -103,6 +121,11 @@ FEATURE_LABELS = {
     "overdue_days": "Дни просрочки",
     "collateral_value": "Стоимость залога",
     "industry": "Отрасль бизнеса",
+    # Добавлены метки для новых фичей
+    "expense_ratio": "Доля расходов от оборота",
+    "debt_ratio": "Долговая нагрузка",
+    "loan_ratio": "Отношение кредита к выручке",
+    "collateral_coverage": "Покрытие залогом",
 }
 
 
@@ -119,11 +142,18 @@ def predict_with_explanation(
     if top_n < 1:
         raise ValueError("top_n должен быть не меньше 1")
 
-    # Проверяем заявку и получаем вероятность дефолта
+    # Проверяем заявку и получаем вероятность дефолта (там же проверяются поля)
     pd_value = predict_pd(application)
 
+    # Обогащаем заявку для создания DataFrame под SHAP
+    app = dict(application)
+    app["expense_ratio"] = app["monthly_expenses"] / max(app["monthly_turnover"], 1)
+    app["debt_ratio"] = app["monthly_debt_payments"] / max(app["monthly_turnover"], 1)
+    app["loan_ratio"] = app["amount"] / max(app["annual_revenue"], 1)
+    app["collateral_coverage"] = app["collateral_value"] / max(app["amount"], 1)
+
     X = pd.DataFrame(
-        [{feature: application[feature] for feature in FEATURES}],
+        [{feature: app[feature] for feature in FEATURES}],
         columns=FEATURES,
     )
 
