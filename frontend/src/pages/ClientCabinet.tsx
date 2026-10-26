@@ -8,7 +8,7 @@ import {
   getApplicationById,
   uploadDocument,
   getDocuments,
-  autofillCompanyByInn // <--- ИСПРАВЛЕНО: добавлена запятая выше
+  autofillCompanyByInn
 } from '../services/api';
 import { recommendProducts } from '../services/recommender';
 import {
@@ -68,8 +68,9 @@ export default function ClientCabinet() {
     phone: '+7 (999) 123-45-67',
     email: 'ivan@romashka.ru',
     address: 'г. Москва, ул. Тверская, д. 1',
-    okved: '47.11 Торговля розничная', // <--- ИСПРАВЛЕНО: добавлена запятая
-    businessAgeMonths: 24
+    okved: '47.11 Торговля розничная',
+    businessAgeMonths: 24,
+    employeesCount: 0 // Добавлено для хранения реального количества сотрудников
   });
   const [result, setResult] = useState<any>(null);
   const [isAutofilling, setIsAutofilling] = useState(false);
@@ -105,7 +106,6 @@ export default function ClientCabinet() {
       }
     };
 
-    // Небольшой дебаунс, чтобы не спамить бэкенд при перетаскивании ползунков
     const timer = setTimeout(() => {
       fetchRecs();
     }, 300);
@@ -139,7 +139,6 @@ export default function ClientCabinet() {
 
   // АВТОЗАПОЛНЕНИЕ ПО ИНН
   useEffect(() => {
-    // Ищем только если ИНН валидной длины (10 для ООО, 12 для ИП)
     if (formData.inn.length !== 10 && formData.inn.length !== 12) return;
 
     let isMounted = true;
@@ -156,6 +155,7 @@ export default function ClientCabinet() {
             director: data.director || prev.director,
             okved: data.industry_name || data.industry || prev.okved,
             businessAgeMonths: data.business_age_months || 24,
+            employeesCount: data.employees_count || 0, // Пытаемся подтянуть сотрудников
           }));
           toast.success('Данные компании подгружены из ЕГРЮЛ');
         }
@@ -166,7 +166,7 @@ export default function ClientCabinet() {
       } finally {
         if (isMounted) setIsAutofilling(false);
       }
-    }, 500); // Ждем полсекунды после окончания ввода
+    }, 500);
 
     return () => {
       isMounted = false;
@@ -187,13 +187,17 @@ export default function ClientCabinet() {
   const totalDebt = approvedApps.reduce((sum, app) => sum + (app.amount || 0), 0);
   const estimatedMonthlyPayment = approvedApps.length > 0 ? Math.round(totalDebt / 24) : 0;
 
+  // Имя для приветствия берем из ФИО директора (которое подтянулось из ЕГРЮЛ),
+  // чтобы не было рассинхрона между "Иван Иванов" и "ИП Петров"
+  const displayFirstName = formData.director ? formData.director.split(' ')[0] : clientName.split(' ')[0];
+
   const handleSaveDraft = async () => {
     try {
       await createDraft({
         ...formData,
         ...calcParams,
         term: calcParams.termYears * 12,
-        productId: selectedProduct?.product?.id, // <--- ИСПРАВЛЕНО: добавлена запятая
+        productId: selectedProduct?.product?.id,
         businessAgeMonths: formData.businessAgeMonths
       });
       toast.success('Черновик сохранен на сервере!');
@@ -217,7 +221,7 @@ export default function ClientCabinet() {
         ...formData,
         ...calcParams,
         term: calcParams.termYears * 12,
-        productId: selectedProduct?.product?.id, // <--- ИСПРАВЛЕНО: добавлена запятая
+        productId: selectedProduct?.product?.id,
         businessAgeMonths: formData.businessAgeMonths
       });
       const submitted = await submitApplication(draft.id);
@@ -267,7 +271,7 @@ export default function ClientCabinet() {
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
       <Card className="p-8 bg-slate-900 text-white relative overflow-hidden border-none">
         <div className="relative z-10">
-          <h2 className="text-3xl font-extrabold mb-2">Добрый день, {clientName.split(' ')[0]}!</h2>
+          <h2 className="text-3xl font-extrabold mb-2">Добрый день, {displayFirstName}!</h2>
           <p className="text-slate-400 mb-6">{formData.companyName} • ИНН {formData.inn}</p>
           <Button onClick={() => { setActiveTab('calculator'); setStep(1); }} className="bg-alfa hover:bg-alfaDark">
             Рассчитать кредит
@@ -282,7 +286,7 @@ export default function ClientCabinet() {
         <Card className="p-5 border-l-4 border-green-500 flex justify-between items-center">
           <div>
             <p className="text-xs text-slate-500 mb-1">Остаток на счете</p>
-            <p className="text-2xl font-extrabold text-slate-900">1 250 000 ₽</p>
+            <p className="text-2xl font-extrabold text-slate-900">—</p>
           </div>
           <Wallet className="w-8 h-8 text-green-500 opacity-20" />
         </Card>
@@ -297,7 +301,7 @@ export default function ClientCabinet() {
         <Card className="p-5 border-l-4 border-slate-300 flex justify-between items-center">
           <div>
             <p className="text-xs text-slate-500 mb-1">Сотрудники</p>
-            <p className="text-2xl font-extrabold text-slate-900">15 чел.</p>
+            <p className="text-2xl font-extrabold text-slate-900">{formData.employeesCount > 0 ? `${formData.employeesCount} чел.` : '—'}</p>
           </div>
           <Users className="w-8 h-8 text-slate-400 opacity-20" />
         </Card>
@@ -721,6 +725,7 @@ export default function ClientCabinet() {
 
                 <div className="flex gap-3 justify-center">
                   <Button variant="outline" onClick={() => setSignStep('contract')}>Назад</Button>
+                  {/* TODO: Когда Костя сделает /sign, заменить этот локальный код на API-запрос */}
                   <Button onClick={() => {
                     if (otpInput === '4821') {
                       setSignStep('signed');
@@ -1095,8 +1100,13 @@ export default function ClientCabinet() {
     <div className="flex h-[calc(100vh-64px)] bg-slate-50">
       <div className="w-64 bg-white border-r border-slate-200 flex flex-col hidden md:flex">
         <div className="p-6 border-b border-slate-100 flex items-center gap-3">
-          <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center text-alfa font-bold">{clientName[0]}</div>
-          <div><p className="font-bold text-sm">{clientName}</p><p className="text-xs text-slate-500">{formData.companyName}</p></div>
+          <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center text-alfa font-bold">
+            {formData.director ? formData.director[0] : clientName[0]}
+          </div>
+          <div>
+            <p className="font-bold text-sm">{formData.director || clientName}</p>
+            <p className="text-xs text-slate-500">{formData.companyName}</p>
+          </div>
         </div>
         <div className="p-4 flex flex-col gap-1 flex-1">
           {[
