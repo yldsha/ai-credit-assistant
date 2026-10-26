@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import httpx
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, Body, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -64,7 +64,6 @@ MOCKS_BASE_URL = os.getenv("MOCKS_BASE_URL", "http://mocks:8001")
 
 # ==================== КОНТРОЛЬ ПЕРЕХОДОВ СТАТУСОВ ====================
 
-# Статусы, из которых специалист имеет право вынести ручное решение
 ALLOWED_EMPLOYEE_DECISION_STATUSES = {
     "manual_review",
     "need_info",
@@ -72,7 +71,6 @@ ALLOWED_EMPLOYEE_DECISION_STATUSES = {
     "scoring",
 }
 
-# Доступные действия клиента на шаге 7 (после одобрения / контр-оферты)
 POST_APPROVAL_ACTIONS: dict[str, dict[str, Any]] = {
     "accept_offer": {
         "allowed_from": {"approved", "counter_offer"},
@@ -276,6 +274,61 @@ def calculate_business_age_months(
         return fallback
 
 
+def format_recommendations_for_client(
+    rec_result: dict[str, Any],
+    products: list[dict[str, Any]],
+    amount: int,
+    term_months: int,
+) -> dict[str, Any]:
+    """
+    Форматирует ответ recommend() для клиентского фронтенда:
+    гарантирует наличие полей product_id, name, label («Лучший вариант» / «Альтернатива»),
+    rate_from, payment (monthly, overpayment) и reasons, а также скрывает служебные score/ranked_by.
+    """
+    prod_map = {p["id"]: p for p in products}
+    cfg = get_engine_config()
+    clean_recs: list[dict[str, Any]] = []
+
+    for idx, r in enumerate(rec_result.get("recommendations", [])):
+        r_copy = {k: v for k, v in r.items() if k not in ("score", "ranked_by")}
+        pid = r_copy.get("product_id") or r_copy.get("id")
+        prod = prod_map.get(pid, {})
+
+        r_copy["product_id"] = pid
+        r_copy["name"] = r_copy.get("name") or prod.get("name", "")
+        r_copy["label"] = r_copy.get("label") or (
+            "Лучший вариант" if idx == 0 else "Альтернатива"
+        )
+        r_copy["rate_from"] = (
+            r_copy.get("rate_from")
+            if r_copy.get("rate_from") is not None
+            else prod.get("rate_from", prod.get("rate_calc", 0))
+        )
+
+        # Гарантируем структуру payment: {monthly, overpayment}
+        payment_obj = r_copy.get("payment")
+        if not isinstance(payment_obj, dict) or "monthly" not in payment_obj:
+            monthly_val = (
+                round(monthly_payment(prod, amount, term_months, cfg))
+                if prod
+                else 0
+            )
+            overpayment_val = max(0, monthly_val * term_months - amount)
+            r_copy["payment"] = {
+                "monthly": monthly_val,
+                "overpayment": overpayment_val,
+            }
+
+        r_copy["reasons"] = r_copy.get("reasons") or []
+        clean_recs.append(r_copy)
+
+    return {
+        "recommendations": clean_recs,
+        "excluded": rec_result.get("excluded", []),
+        "suggestions": rec_result.get("suggestions", []),
+    }
+
+
 # ==================== ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ ====================
 
 app = FastAPI(
@@ -337,8 +390,7 @@ def record_status_change(
 def extract_15_features(app_obj: Application) -> dict[str, Any]:
     """
     Строгий маппинг 15 полей заявки в словарь для модели scoring/risk_model/predict.py.
-    Если annual_revenue не указана (None), для расчёта фичей берётся 12 * monthly_turnover,
-    но в самой заявке app_obj.annual_revenue остаётся None для корректной работы decide().
+    Поле purpose передаётся напрямую из заявки (например, cash_gap, equipment, working_capital).
     """
     collateral_type_val = (
         app_obj.collateral_type
@@ -375,12 +427,22 @@ def extract_15_features(app_obj: Application) -> dict[str, Any]:
 # ==================== PYDANTIC СХЕМЫ ====================
 
 
+class RecommendRequestPayload(BaseModel):
+    amount: int = Field(..., gt=0, example=1500000)
+    term_months: int = Field(..., gt=0, example=24)
+    purpose: str = Field(..., example="equipment")
+    legal_form: Literal["IP", "OOO"] = Field(default="OOO", example="OOO")
+    has_collateral: bool = Field(default=False, example=False)
+    collateral_type: str | None = Field(default="none", example="none")
+    business_age_months: int = Field(default=24, ge=0, example=24)
+
+
 class DraftApplicationCreate(BaseModel):
     client_id: int | None = Field(default=1, description="ID пользователя-клиента")
     inn: str | None = Field(default="770200000001", description="ИНН компании")
     product_id: str | None = Field(
         default=None,
-        description="Выбранный продукт (если не указан — подставится топ-1 из recommend())",
+        description="Выбранный клиентом продукт (сохраняется в БД и передаётся в decide())",
     )
     bki_consent: bool = Field(default=True, description="Согласие на запрос в БКИ")
 
@@ -405,6 +467,13 @@ class DraftApplicationCreate(BaseModel):
     industry: str = Field(default="trade", example="trade")
 
 
+class SubmitApplicationPayload(BaseModel):
+    product_id: str | None = Field(
+        default=None,
+        description="Опциональное переопределение выбранного клиентом product_id при отправке заявки",
+    )
+
+
 class SupplementInfoRequest(BaseModel):
     annual_revenue: float | None = Field(default=None, gt=0)
     monthly_turnover: float | None = Field(default=None, ge=0)
@@ -412,6 +481,7 @@ class SupplementInfoRequest(BaseModel):
     existing_debt: float | None = Field(default=None, ge=0)
     monthly_debt_payments: float | None = Field(default=None, ge=0)
     bki_consent: bool | None = Field(default=None)
+    product_id: str | None = Field(default=None)
 
 
 class PostApprovalActionRequest(BaseModel):
@@ -472,9 +542,6 @@ def serialize_history(app_obj: Application) -> list[dict[str, Any]]:
 
 
 def get_available_client_actions(status: str) -> list[dict[str, str]]:
-    """
-    Возвращает список доступных действий для клиента на шаге 7 (после одобрения).
-    """
     if status in ("approved", "counter_offer"):
         return [
             {"action": "accept_offer", "label": "Принять предложение"},
@@ -499,11 +566,13 @@ def serialize_for_client(app_obj: Application) -> dict[str, Any]:
     """
     decision = app_obj.decision_result or {}
     recs_data = app_obj.recommendations_data or {}
-
-    clean_recs = []
-    for r in recs_data.get("recommendations", []):
-        r_copy = {k: v for k, v in r.items() if k not in ("score", "ranked_by")}
-        clean_recs.append(r_copy)
+    products = load_products()
+    formatted_recs = format_recommendations_for_client(
+        recs_data,
+        products=products,
+        amount=int(app_obj.amount),
+        term_months=int(app_obj.term_months),
+    )
 
     return {
         "id": app_obj.id,
@@ -529,11 +598,7 @@ def serialize_for_client(app_obj: Application) -> dict[str, Any]:
         "overdue_days": app_obj.overdue_days,
         "collateral_value": app_obj.collateral_value,
         "industry": app_obj.industry,
-        "recommendations": {
-            "recommendations": clean_recs,
-            "excluded": recs_data.get("excluded", []),
-            "suggestions": recs_data.get("suggestions", []),
-        },
+        "recommendations": formatted_recs,
         "decision": {
             "outcome": decision.get("outcome"),
             "client_reasons": decision.get("client_reasons", []),
@@ -618,8 +683,8 @@ async def process_application_pipeline(application_id: int) -> None:
     1. Статус 'checking' -> HTTP-запросы к http://mocks:8001 (/egrul, /fns, /bki).
        Если БКИ возвращает 503 — перевод в 'manual_review' и завершение конвейера.
     2. Расчёт business_age_months по registration_date из ЕГРЮЛ.
-    3. Статус 'scoring' -> хардкод PD для 5 демо-клиентов или вызов модели Даши (scoring/risk_model/predict.py).
-    4. Вызов decide() -> сохранение итогов в БД и переход в финальный статус решения.
+    3. Статус 'scoring' -> вызов модели Даши (scoring/risk_model/predict.py) + эталонные PD для 5 демо-ИНН.
+    4. Вызов decide() по выбранному клиентом product_id -> сохранение итогов в БД.
     """
     db = SessionLocal()
     try:
@@ -675,7 +740,6 @@ async def process_application_pipeline(application_id: int) -> None:
             egrul_data["company_name"] = egrul_data["name"]
         fns_data = fns_resp.json()
 
-        # Обновляем данные компании и рассчитываем business_age_months по registration_date
         app_obj.egrul_data = egrul_data
         app_obj.fns_data = fns_data
         app_obj.company_name = (
@@ -767,8 +831,6 @@ async def process_application_pipeline(application_id: int) -> None:
         engine_risk_factors: list[dict[str, Any]] = []
         model_version = "catboost-risk-v1"
 
-        # Сначала вызываем реальную модель Даши из scoring/risk_model/predict.py,
-        # а для 5 демо-клиентов из seed.json фиксируем эталонный PD по сценариям
         try:
             prediction = predict_with_explanation(features_dict, top_n=5)
             pd_value = float(prediction["pd"])
@@ -803,19 +865,21 @@ async def process_application_pipeline(application_id: int) -> None:
         db.commit()
         db.refresh(app_obj)
 
-        # Шаг 3: Вызов движка решений decide()
+        # Шаг 3: Вызов движка решений decide() строго по выбранному клиентом product_id
         products = load_products()
         cfg = get_engine_config()
 
         valid_product_ids = {p["id"] for p in products}
-        chosen_product_id = (
-            app_obj.product_id
-            if app_obj.product_id in valid_product_ids
-            else "loan_unsecured"
-        )
+        if app_obj.product_id and app_obj.product_id in valid_product_ids:
+            chosen_product_id = app_obj.product_id
+        else:
+            recs = (app_obj.recommendations_data or {}).get("recommendations", [])
+            if recs and recs[0].get("product_id") in valid_product_ids:
+                chosen_product_id = recs[0]["product_id"]
+            else:
+                chosen_product_id = "loan_unsecured"
+            app_obj.product_id = chosen_product_id
 
-        # Для сценария 5 (7702000005 — ООО «Меридиан») принудительно передаём annual_revenue=None,
-        # если клиент явно не дозаполнил выручку на шаге need_info, чтобы сценарий Златы сработал 100%
         effective_annual_revenue = app_obj.annual_revenue
         if inn == "7702000005" and app_obj.annual_revenue == 24000000.0:
             effective_annual_revenue = None
@@ -863,6 +927,37 @@ async def process_application_pipeline(application_id: int) -> None:
 @app.get("/products", summary="Получить каталог всех кредитных продуктов")
 def get_products() -> list[dict[str, Any]]:
     return load_products()
+
+
+@app.post(
+    "/recommend",
+    summary="Подбор и ранжирование кредитных продуктов на бэкенде без сохранения в БД",
+)
+def recommend_products_endpoint(
+    payload: RecommendRequestPayload,
+) -> dict[str, Any]:
+    products = load_products()
+    collateral_for_rec = (
+        payload.collateral_type
+        if payload.has_collateral and payload.collateral_type not in ("none", "")
+        else None
+    )
+    rec_request = RecRequest(
+        amount=payload.amount,
+        term_months=payload.term_months,
+        purpose=payload.purpose,
+        legal_form=payload.legal_form,
+        business_age_months=payload.business_age_months,
+        has_collateral=payload.has_collateral,
+        collateral_type=collateral_for_rec,
+    )
+    rec_result = recommend(rec_request, products=products)
+    return format_recommendations_for_client(
+        rec_result,
+        products=products,
+        amount=payload.amount,
+        term_months=payload.term_months,
+    )
 
 
 @app.get(
@@ -933,12 +1028,19 @@ async def create_application_draft(
         collateral_type=collateral_for_rec,
     )
     rec_result = recommend(rec_request, products=products)
+    formatted_recs = format_recommendations_for_client(
+        rec_result,
+        products=products,
+        amount=payload.amount,
+        term_months=payload.term_months,
+    )
 
+    # Сохраняем именно тот product_id, который выбрал и прислал клиент
     valid_ids = {p["id"] for p in products}
     selected_product_id = payload.product_id
     if not selected_product_id or selected_product_id not in valid_ids:
-        if rec_result["recommendations"]:
-            selected_product_id = rec_result["recommendations"][0]["product_id"]
+        if formatted_recs["recommendations"]:
+            selected_product_id = formatted_recs["recommendations"][0]["product_id"]
         else:
             selected_product_id = "loan_unsecured"
 
@@ -966,7 +1068,7 @@ async def create_application_draft(
         has_collateral=payload.has_collateral,
         collateral_type=norm_collateral_type,
         business_age_months=calculated_age,
-        annual_revenue=payload.annual_revenue,  # Остаётся None, если клиент не передал!
+        annual_revenue=payload.annual_revenue,
         monthly_turnover=payload.monthly_turnover,
         monthly_expenses=payload.monthly_expenses,
         existing_debt=payload.existing_debt,
@@ -999,9 +1101,9 @@ async def create_application_draft(
 
     return {
         "application": serialize_for_client(new_app),
-        "recommendations": rec_result["recommendations"],
-        "excluded": rec_result["excluded"],
-        "suggestions": rec_result["suggestions"],
+        "recommendations": formatted_recs["recommendations"],
+        "excluded": formatted_recs["excluded"],
+        "suggestions": formatted_recs["suggestions"],
     }
 
 
@@ -1036,6 +1138,10 @@ def supplement_application_info(
         app_obj.monthly_debt_payments = payload.monthly_debt_payments
     if payload.bki_consent is not None:
         app_obj.bki_consent = payload.bki_consent
+    if payload.product_id is not None:
+        valid_ids = {p["id"] for p in load_products()}
+        if payload.product_id in valid_ids:
+            app_obj.product_id = payload.product_id
 
     db.commit()
     db.refresh(app_obj)
@@ -1049,6 +1155,7 @@ def supplement_application_info(
 async def submit_application(
     application_id: int,
     background_tasks: BackgroundTasks,
+    payload: SubmitApplicationPayload | None = Body(default=None),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     app_obj = db.query(Application).filter(Application.id == application_id).first()
@@ -1060,6 +1167,14 @@ async def submit_application(
             status_code=400,
             detail=f"Нельзя отправить заявку из статуса '{app_obj.status}'",
         )
+
+    # Если фронт передал product_id при отправке заявки — обновляем перед скорингом и decide()
+    if payload and payload.product_id:
+        valid_ids = {p["id"] for p in load_products()}
+        if payload.product_id in valid_ids:
+            app_obj.product_id = payload.product_id
+            db.commit()
+            db.refresh(app_obj)
 
     record_status_change(
         db=db,
@@ -1237,7 +1352,6 @@ def make_employee_decision(
     if not app_obj:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
 
-    # ИСПРАВЛЕНО: строгая проверка допустимости перехода статуса для специалиста
     if app_obj.status not in ALLOWED_EMPLOYEE_DECISION_STATUSES:
         allowed_list = ", ".join(sorted(ALLOWED_EMPLOYEE_DECISION_STATUSES))
         raise HTTPException(
