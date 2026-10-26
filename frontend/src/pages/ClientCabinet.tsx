@@ -70,7 +70,9 @@ export default function ClientCabinet() {
     address: 'г. Москва, ул. Тверская, д. 1',
     okved: '47.11 Торговля розничная',
     businessAgeMonths: 24,
-    employeesCount: 0 // Добавлено для хранения реального количества сотрудников
+    employeesCount: 0,
+    monthlyTurnover: 5000000,   // <--- ДОБАВЛЕНО ПОЛЕ
+    monthlyExpenses: 3500000    // <--- ДОБАВЛЕНО ПОЛЕ
   });
   const [result, setResult] = useState<any>(null);
   const [isAutofilling, setIsAutofilling] = useState(false);
@@ -155,7 +157,7 @@ export default function ClientCabinet() {
             director: data.director || prev.director,
             okved: data.industry_name || data.industry || prev.okved,
             businessAgeMonths: data.business_age_months || 24,
-            employeesCount: data.employees_count || 0, // Пытаемся подтянуть сотрудников
+            employeesCount: data.employees_count || 0,
           }));
           toast.success('Данные компании подгружены из ЕГРЮЛ');
         }
@@ -187,8 +189,6 @@ export default function ClientCabinet() {
   const totalDebt = approvedApps.reduce((sum, app) => sum + (app.amount || 0), 0);
   const estimatedMonthlyPayment = approvedApps.length > 0 ? Math.round(totalDebt / 24) : 0;
 
-  // Имя для приветствия берем из ФИО директора (которое подтянулось из ЕГРЮЛ),
-  // чтобы не было рассинхрона между "Иван Иванов" и "ИП Петров"
   const displayFirstName = formData.director ? formData.director.split(' ')[0] : clientName.split(' ')[0];
 
   const handleSaveDraft = async () => {
@@ -965,6 +965,11 @@ export default function ClientCabinet() {
               <div><label className="text-sm text-slate-500 mb-1 block">Выручка (₽)</label><input type="number" value={formData.revenue} onChange={e => setFormData({...formData, revenue: Number(e.target.value)})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
               <div><label className="text-sm text-slate-500 mb-1 block">Чистая прибыль (₽)</label><input type="number" value={formData.profit} onChange={e => setFormData({...formData, profit: Number(e.target.value)})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
               <div><label className="text-sm text-slate-500 mb-1 block">Кредитные обязательства (₽)</label><input type="number" value={formData.liabilities} onChange={e => setFormData({...formData, liabilities: Number(e.target.value)})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
+
+              {/* ДОБАВЛЕНЫ ПОЛЯ ОБОРОТА И РАСХОДОВ */}
+              <div><label className="text-sm text-slate-500 mb-1 block">Оборот в месяц (₽)</label><input type="number" value={formData.monthlyTurnover} onChange={e => setFormData({...formData, monthlyTurnover: Number(e.target.value)})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
+              <div><label className="text-sm text-slate-500 mb-1 block">Расходы в месяц (₽)</label><input type="number" value={formData.monthlyExpenses} onChange={e => setFormData({...formData, monthlyExpenses: Number(e.target.value)})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
+
             </div>
             <div className="flex gap-4 mt-8"><Button variant="outline" onClick={() => setStep(2)}>Назад</Button><Button className="flex-1" onClick={() => setStep(4)}>Далее</Button></div>
           </>

@@ -87,17 +87,18 @@ export async function getApplications(inn: string) {
 export async function createDraft(data: any) {
   const payload = {
     inn: data.inn,
-    product_id: data.productId || null, // <--- ДОБАВЛЕНО: Передаем ID продукта
+    product_id: data.productId || null,
     amount: data.amount,
     term_months: data.term,
-    purpose: data.purpose || "working_capital", // <--- Исправлено: теперь берется из формы
+    purpose: data.purpose || "working_capital",
     legal_form: data.type === 'ООО' ? 'OOO' : 'IP',
     has_collateral: data.collateral === 'С залогом',
     collateral_type: data.collateral === 'С залогом' ? 'real_estate' : 'none',
     business_age_months: data.businessAgeMonths || 24,
     annual_revenue: data.revenue,
-    monthly_turnover: data.revenue / 12,
-    monthly_expenses: data.liabilities / 12,
+    // ИСПРАВЛЕНО: Берем реальные значения из формы, если они есть
+    monthly_turnover: data.monthlyTurnover || (data.revenue / 12),
+    monthly_expenses: data.monthlyExpenses || (data.liabilities / 12),
     existing_debt: data.liabilities,
     monthly_debt_payments: data.liabilities / 24,
     overdue_days: 0,
