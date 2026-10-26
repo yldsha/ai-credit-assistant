@@ -40,10 +40,31 @@ const normalizeApplication = (app: any) => {
   };
 };
 
+// === НОВАЯ ФУНКЦИЯ ДЛЯ POST /recommend ===
+// Вызывает готовый подбор на бэкенде с метками и причинами
+export async function fetchRecommendations(params: any) {
+  const payload = {
+    amount: params.amount,
+    term_months: params.termYears * 12,
+    purpose: params.purpose || 'working_capital',
+    legal_form: params.type === 'ООО' ? 'OOO' : 'IP',
+    business_age_months: params.businessAgeMonths || 24,
+    has_collateral: params.collateral === 'С залогом',
+    collateral_type: params.collateral === 'С залогом' ? 'real_estate' : 'none'
+  };
+
+  const res = await fetch(`${API_URL}/recommend`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!res.ok) throw new Error('Ошибка при подборе продуктов');
+  return res.json();
+}
+
 // === ЭНДПОИНТЫ ДЛЯ КЛИЕНТА ===
 
-// Получить список заявок клиента (бэкенд Кости не имеет общего эндпоинта,
-// поэтому мы собираем их по ID, сохраненным в LocalStorage)
 export async function getApplications(inn: string) {
   const localIds = JSON.parse(localStorage.getItem(`my_apps_${inn}`) || '[]');
   if (localIds.length === 0) return [];
@@ -63,17 +84,17 @@ export async function getApplications(inn: string) {
   return apps;
 }
 
-// Создать черновик заявки и получить рекомендации
 export async function createDraft(data: any) {
   const payload = {
     inn: data.inn,
+    product_id: data.productId || null, // <--- ДОБАВЛЕНО: Передаем ID продукта
     amount: data.amount,
     term_months: data.term,
-    purpose: data.purpose || "working_capital",
+    purpose: data.purpose || "working_capital", // <--- Исправлено: теперь берется из формы
     legal_form: data.type === 'ООО' ? 'OOO' : 'IP',
     has_collateral: data.collateral === 'С залогом',
     collateral_type: data.collateral === 'С залогом' ? 'real_estate' : 'none',
-    business_age_months: 24, // Можно доработать, чтобы бралось из формы
+    business_age_months: data.businessAgeMonths || 24,
     annual_revenue: data.revenue,
     monthly_turnover: data.revenue / 12,
     monthly_expenses: data.liabilities / 12,
@@ -93,14 +114,12 @@ export async function createDraft(data: any) {
 
   const result = await res.json();
 
-  // Запоминаем ID созданной заявки, чтобы потом показать её в списке
   const localIds = JSON.parse(localStorage.getItem(`my_apps_${data.inn}`) || '[]');
   localStorage.setItem(`my_apps_${data.inn}`, JSON.stringify([...localIds, result.application.id]));
 
   return normalizeApplication(result.application);
 }
 
-// Отправить заявку в банк (запускает конвейер на бэкенде)
 export async function submitApplication(id: number) {
   const res = await fetch(`${API_URL}/applications/${id}/submit`, {
     method: 'POST',
@@ -110,7 +129,6 @@ export async function submitApplication(id: number) {
   return normalizeApplication(data);
 }
 
-// Получить детали конкретной заявки (для обновления статуса)
 export async function getApplicationById(id: number) {
   const res = await fetch(`${API_URL}/applications/${id}`);
   const data = await res.json();
@@ -119,14 +137,12 @@ export async function getApplicationById(id: number) {
 
 // === ЭНДПОИНТЫ ДЛЯ СОТРУДНИКА ===
 
-// Получить все заявки для рабочего стола сотрудника
 export async function getEmployeeApplications() {
   const res = await fetch(`${API_URL}/employee/applications`);
   const data = await res.json();
   return data.map(normalizeApplication);
 }
 
-// Принять решение по заявке
 export async function makeEmployeeDecision(id: number, outcome: string, comment: string, extra?: any) {
   const payload: any = {
     outcome,
@@ -148,9 +164,7 @@ export async function makeEmployeeDecision(id: number, outcome: string, comment:
   return normalizeApplication(data);
 }
 
-// Заглушка для документов (Костя пока не сделал эндпоинт загрузки файлов)
 export async function uploadDocument(inn: string, docId: string, file: File) {
-  // Имитируем задержку сети
   await new Promise(r => setTimeout(r, 500));
   const docs = JSON.parse(localStorage.getItem(`docs_${inn}`) || '{}');
   docs[docId] = { name: file.name, size: file.size };

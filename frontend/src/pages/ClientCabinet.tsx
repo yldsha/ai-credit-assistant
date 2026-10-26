@@ -9,12 +9,13 @@ import {
   uploadDocument,
   getDocuments
 } from '../services/api';
-import { recommendProducts } from '../services/recommender'; // Импортируем асинхронный рекомендатель
+import { recommendProducts } from '../services/recommender';
 import {
   Home, FileText, Calculator, User, ChevronRight, CheckCircle2, XCircle,
   ArrowLeft, Briefcase, CreditCard, ShieldCheck, HelpCircle, Upload, Clock,
   Phone, Building2, MapPin, AlertTriangle, MessageSquare, Download, Wallet,
-  Users, MessageCircle, Bell, LifeBuoy, Headphones, Mail, FileEdit, FilePlus
+  Users, MessageCircle, Bell, LifeBuoy, Headphones, Mail, FileEdit, FilePlus,
+  Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -46,6 +47,7 @@ export default function ClientCabinet() {
     businessAgeCategory: 'Более 9 месяцев' as 'До 9 месяцев' | 'Более 9 месяцев',
     amount: 1000000,
     termYears: 2,
+    purpose: 'working_capital' // <--- ДОБАВЛЕНО ПОЛЕ ЦЕЛИ
   });
 
   // Стейты для рекомендаций
@@ -65,8 +67,7 @@ export default function ClientCabinet() {
     phone: '+7 (999) 123-45-67',
     email: 'ivan@romashka.ru',
     address: 'г. Москва, ул. Тверская, д. 1',
-    okved: '47.11 Торговля розничная',
-    purpose: 'working_capital'
+    okved: '47.11 Торговля розничная'
   });
   const [result, setResult] = useState<any>(null);
 
@@ -86,7 +87,7 @@ export default function ClientCabinet() {
     }
   };
 
-  // Асинхронный вызов рекомендательной модели
+  // Асинхронный вызов рекомендательной модели с учетом цели
   useEffect(() => {
     let isMounted = true;
     const fetchRecs = async () => {
@@ -100,8 +101,16 @@ export default function ClientCabinet() {
         if (isMounted) setIsRecLoading(false);
       }
     };
-    fetchRecs();
-    return () => { isMounted = false; };
+
+    // Небольшой дебаунс, чтобы не спамить бэкенд при перетаскивании ползунков
+    const timer = setTimeout(() => {
+      fetchRecs();
+    }, 300);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
   }, [calcParams]);
 
   // Поллинг статуса заявки
@@ -140,7 +149,12 @@ export default function ClientCabinet() {
 
   const handleSaveDraft = async () => {
     try {
-      await createDraft({ ...formData, ...calcParams, term: calcParams.termYears * 12 });
+      await createDraft({
+        ...formData,
+        ...calcParams,
+        term: calcParams.termYears * 12,
+        productId: selectedProduct?.product?.id // <--- ПЕРЕДАЕМ ID ПРОДУКТА
+      });
       toast.success('Черновик сохранен на сервере!');
       await loadData();
       setActiveTab('drafts');
@@ -158,7 +172,12 @@ export default function ClientCabinet() {
 
     setIsSubmitting(true);
     try {
-      const draft = await createDraft({ ...formData, ...calcParams, term: calcParams.termYears * 12 });
+      const draft = await createDraft({
+        ...formData,
+        ...calcParams,
+        term: calcParams.termYears * 12,
+        productId: selectedProduct?.product?.id // <--- ПЕРЕДАЕМ ID ПРОДУКТА
+      });
       const submitted = await submitApplication(draft.id);
       setResult(submitted);
       await loadData();
@@ -712,6 +731,23 @@ export default function ClientCabinet() {
       <h1 className="text-3xl font-extrabold text-slate-900 mb-8">Рассчитаем кредит под вашу задачу</h1>
       <div className="flex flex-col lg:flex-row gap-8">
         <div className="w-full lg:w-[380px] shrink-0 space-y-8">
+
+          {/* ЦЕЛЬ КРЕДИТА (ДОБАВЛЕНО) */}
+          <div>
+            <p className="text-sm text-slate-500 mb-3">Цель кредита</p>
+            <select
+              value={calcParams.purpose}
+              onChange={e => setCalcParams({...calcParams, purpose: e.target.value})}
+              className="w-full p-3 bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-alfa text-sm font-medium"
+            >
+              <option value="working_capital">Пополнение оборотных средств</option>
+              <option value="cash_gap">Кассовый разрыв</option>
+              <option value="equipment">Покупка оборудования</option>
+              <option value="development">Развитие бизнеса</option>
+              <option value="refinancing">Рефинансирование</option>
+            </select>
+          </div>
+
           <div>
             <p className="text-sm text-slate-500 mb-3">Тип регистрации</p>
             <div className="flex gap-2">
@@ -763,7 +799,7 @@ export default function ClientCabinet() {
           {isRecLoading ? (
             <div className="flex flex-col items-center justify-center h-full space-y-4">
               <div className="w-12 h-12 border-4 border-alfa border-t-transparent rounded-full animate-spin"></div>
-              <p className="text-slate-500 font-medium">Подбираем лучшие условия...</p>
+              <p className="text-slate-500 font-medium">Модель подбирает лучшие условия...</p>
             </div>
           ) : recommendations.length > 0 ? (
             recommendations.map((rec, idx) => (
@@ -771,8 +807,27 @@ export default function ClientCabinet() {
                 <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 relative">
                   <div className="flex justify-between items-start mb-4">
                     <div>
-                      <h3 className="text-xl font-extrabold text-slate-900 mb-1">{rec.product.name}</h3>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-xl font-extrabold text-slate-900">{rec.product.name}</h3>
+                        {/* ВЫВОДИМ МЕТКУ ОТ БЭКЕНДА */}
+                        {rec.product.label && (
+                          <Badge variant={idx === 0 ? 'warning' : idx === 1 ? 'info' : 'default'}>
+                            {rec.product.label}
+                          </Badge>
+                        )}
+                      </div>
                       <p className="text-slate-500 text-sm">{rec.product.desc}</p>
+
+                      {/* ВЫВОДИМ ПРИЧИНЫ ОТ БЭКЕНДА */}
+                      {rec.product.reasons && rec.product.reasons.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {rec.product.reasons.map((reason: string, i: number) => (
+                            <span key={i} className="inline-flex items-center gap-1 text-[10px] font-medium bg-indigo-50 text-indigo-700 px-2 py-1 rounded-md">
+                              <Sparkles className="w-3 h-3" /> {reason}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center shrink-0">
                       <Briefcase className="w-6 h-6 text-slate-600" />
