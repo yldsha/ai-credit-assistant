@@ -190,3 +190,19 @@ export async function autofillCompanyByInn(inn: string) {
 
   return res.json();
 }
+
+// === ПОДПИСАНИЕ ДОГОВОРА ===
+export async function signContract(id: number, otpCode: string) {
+  const res = await fetch(`${API_URL}/applications/${id}/sign`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ otp_code: otpCode })
+  });
+
+  if (!res.ok) {
+    throw new Error('Неверный код подтверждения или ошибка сервера');
+  }
+
+  const data = await res.json();
+  return normalizeApplication(data);
+}
