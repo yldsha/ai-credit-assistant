@@ -1,57 +1,45 @@
 {
-  "_note": "Синтетические данные для моков. Сценарии 1–5 — по тестовым сценариям Златы, 6–7 — дополнительные для демонстрации стоп-фактора и отказоустойчивости. Формат: одна запись на ИНН, три блока — egrul, fns, bki. Поле industry — код отрасли как в датасете модели риска (trade, services, manufacturing, construction, it); industry_name — для интерфейса.",
+  "_note": "Синтетические данные для моков. Сценарии 1–5 — по тестовым сценариям Златы, 6–7 — дополнительные для демонстрации стоп-фактора и отказоустойчивости, 8–10 — для оценки живой моделью риска (PD не фиксируется). Формат: одна запись на ИНН, три блока — egrul, fns, bki. Поле industry — код отрасли как в датасете модели риска (trade, services, manufacturing, construction, it); industry_name — для интерфейса.",
   "companies": [
     {
       "inn": "770200000001",
       "_scenario": "1. Автоодобрение — ИП Иван Петров, 1 млн ₽, 24 мес, закупка товаров, PD 2%",
-      "egrul": {"ogrn": "320770000000011", "name": "ИП Петров Иван Сергеевич", "legal_form": "IP", "status": "active",
-                "registration_date": "2020-05-18", "okved": "47.19", "industry": "trade", "industry_name": "Торговля",
-                "region": "Москва", "employees": 6, "director": "Петров Иван Сергеевич"},
+      "egrul": {"ogrn": "320770000000011", "name": "ИП Петров Иван Сергеевич", "legal_form": "IP", "status": "active", "registration_date": "2020-05-18", "okved": "47.19", "industry": "trade", "industry_name": "Торговля", "region": "Москва", "employees": 6, "director": "Петров Иван Сергеевич"},
       "fns": {"tax_debt": 0, "invalid_info_flag": false, "mass_address_flag": false},
       "bki": {"active_loans": 1, "closed_loans": 3, "max_overdue_days_12m": 0, "overdue_count_12m": 0, "inquiries_6m": 1}
     },
     {
       "inn": "7702000002",
       "_scenario": "2. Ручной разбор — ООО «Вектор», 2 млн ₽, 36 мес, оборудование, PD 9%, нестабильные обороты",
-      "egrul": {"ogrn": "1197700000022", "name": "ООО «Вектор»", "legal_form": "OOO", "status": "active",
-                "registration_date": "2019-09-02", "okved": "25.62", "industry": "manufacturing", "industry_name": "Производство",
-                "region": "Санкт-Петербург", "employees": 22, "director": "Кузнецова Ольга Викторовна"},
+      "egrul": {"ogrn": "1197700000022", "name": "ООО «Вектор»", "legal_form": "OOO", "status": "active", "registration_date": "2019-09-02", "okved": "25.62", "industry": "manufacturing", "industry_name": "Производство", "region": "Санкт-Петербург", "employees": 22, "director": "Кузнецова Ольга Викторовна"},
       "fns": {"tax_debt": 0, "invalid_info_flag": false, "mass_address_flag": false},
       "bki": {"active_loans": 2, "closed_loans": 2, "max_overdue_days_12m": 0, "overdue_count_12m": 0, "inquiries_6m": 3}
     },
     {
       "inn": "770200000003",
       "_scenario": "3. Отказ — ИП Алексей Смирнов, 1,5 млн ₽, 24 мес, развитие, PD 23%, просрочки",
-      "egrul": {"ogrn": "321770000000033", "name": "ИП Смирнов Алексей Петрович", "legal_form": "IP", "status": "active",
-                "registration_date": "2021-03-10", "okved": "56.10", "industry": "services", "industry_name": "Общепит",
-                "region": "Казань", "employees": 9, "director": "Смирнов Алексей Петрович"},
+      "egrul": {"ogrn": "321770000000033", "name": "ИП Смирнов Алексей Петрович", "legal_form": "IP", "status": "active", "registration_date": "2021-03-10", "okved": "56.10", "industry": "services", "industry_name": "Общепит", "region": "Казань", "employees": 9, "director": "Смирнов Алексей Петрович"},
       "fns": {"tax_debt": 0, "invalid_info_flag": false, "mass_address_flag": false},
       "bki": {"active_loans": 3, "closed_loans": 1, "max_overdue_days_12m": 45, "overdue_count_12m": 3, "inquiries_6m": 6}
     },
     {
       "inn": "7702000004",
       "_scenario": "4. Крупная сумма — ООО «Прогресс», 5 млн ₽, 36 мес, оборотные средства, PD 3%",
-      "egrul": {"ogrn": "1157700000044", "name": "ООО «Прогресс»", "legal_form": "OOO", "status": "active",
-                "registration_date": "2015-06-15", "okved": "46.90", "industry": "trade", "industry_name": "Оптовая торговля",
-                "region": "Екатеринбург", "employees": 48, "director": "Волков Дмитрий Андреевич"},
+      "egrul": {"ogrn": "1157700000044", "name": "ООО «Прогресс»", "legal_form": "OOO", "status": "active", "registration_date": "2015-06-15", "okved": "46.90", "industry": "trade", "industry_name": "Оптовая торговля", "region": "Екатеринбург", "employees": 48, "director": "Волков Дмитрий Андреевич"},
       "fns": {"tax_debt": 0, "invalid_info_flag": false, "mass_address_flag": false},
       "bki": {"active_loans": 1, "closed_loans": 6, "max_overdue_days_12m": 0, "overdue_count_12m": 0, "inquiries_6m": 1}
     },
     {
       "inn": "7702000005",
       "_scenario": "5. Нужна информация — ООО «Меридиан», 800 тыс. ₽, 12 мес, оборудование, не хватает финансовых данных",
-      "egrul": {"ogrn": "1227700000055", "name": "ООО «Меридиан»", "legal_form": "OOO", "status": "active",
-                "registration_date": "2022-01-20", "okved": "62.01", "industry": "it", "industry_name": "IT",
-                "region": "Новосибирск", "employees": 11, "director": "Орлов Никита Романович"},
+      "egrul": {"ogrn": "1227700000055", "name": "ООО «Меридиан»", "legal_form": "OOO", "status": "active", "registration_date": "2022-01-20", "okved": "62.01", "industry": "it", "industry_name": "IT", "region": "Новосибирск", "employees": 11, "director": "Орлов Никита Романович"},
       "fns": {"tax_debt": 0, "invalid_info_flag": false, "mass_address_flag": false},
       "bki": {"active_loans": 0, "closed_loans": 1, "max_overdue_days_12m": 0, "overdue_count_12m": 0, "inquiries_6m": 1}
     },
     {
       "inn": "7702000006",
       "_scenario": "6. Дополнительно: стоп-фактор — компания в ликвидации, отказ без модели",
-      "egrul": {"ogrn": "1167700000066", "name": "ООО «Маркет»", "legal_form": "OOO", "status": "liquidation",
-                "registration_date": "2016-11-10", "okved": "47.11", "industry": "trade", "industry_name": "Торговля",
-                "region": "Самара", "employees": 5, "director": "Белов Кирилл Игоревич"},
+      "egrul": {"ogrn": "1167700000066", "name": "ООО «Маркет»", "legal_form": "OOO", "status": "liquidation", "registration_date": "2016-11-10", "okved": "47.11", "industry": "trade", "industry_name": "Торговля", "region": "Самара", "employees": 5, "director": "Белов Кирилл Игоревич"},
       "fns": {"tax_debt": 0, "invalid_info_flag": false, "mass_address_flag": false},
       "bki": {"active_loans": 0, "closed_loans": 1, "max_overdue_days_12m": 0, "overdue_count_12m": 0, "inquiries_6m": 0}
     },
@@ -59,11 +47,30 @@
       "inn": "7702000007",
       "_scenario": "7. Дополнительно: БКИ недоступно — заявка не падает, а уходит на ручную проверку",
       "_simulate": {"bki": "unavailable"},
-      "egrul": {"ogrn": "1217700000077", "name": "ООО «Сервис+»", "legal_form": "OOO", "status": "active",
-                "registration_date": "2021-09-01", "okved": "95.11", "industry": "services", "industry_name": "Услуги",
-                "region": "Уфа", "employees": 12, "director": "Зайцева Марина Олеговна"},
+      "egrul": {"ogrn": "1217700000077", "name": "ООО «Сервис+»", "legal_form": "OOO", "status": "active", "registration_date": "2021-09-01", "okved": "95.11", "industry": "services", "industry_name": "Услуги", "region": "Уфа", "employees": 12, "director": "Зайцева Марина Олеговна"},
       "fns": {"tax_debt": 0, "invalid_info_flag": false, "mass_address_flag": false},
       "bki": {"active_loans": 1, "closed_loans": 0, "max_overdue_days_12m": 0, "overdue_count_12m": 0, "inquiries_6m": 1}
+    },
+    {
+      "inn": "770200000008",
+      "_scenario": "8. Оценка моделью: низкий риск — ИП Соколова, 1,3 млн ₽, 12 мес, закупка товаров, PD модели ≈ 2%",
+      "egrul": {"ogrn": "325770000000088", "name": "ИП Соколова Анна Викторовна", "legal_form": "IP", "status": "active", "registration_date": "2025-03-10", "okved": "47.19", "industry": "trade", "industry_name": "Торговля", "region": "Москва", "employees": 7, "director": "Соколова Анна Викторовна"},
+      "fns": {"tax_debt": 0, "invalid_info_flag": false, "mass_address_flag": false},
+      "bki": {"active_loans": 1, "closed_loans": 2, "max_overdue_days_12m": 1, "overdue_count_12m": 1, "inquiries_6m": 1}
+    },
+    {
+      "inn": "7702000009",
+      "_scenario": "9. Оценка моделью: пограничный риск — ООО «Литейщик», 1,2 млн ₽, 48 мес, рефинансирование, PD модели ≈ 9,5%",
+      "egrul": {"ogrn": "1257700000099", "name": "ООО «Литейщик»", "legal_form": "OOO", "status": "active", "registration_date": "2025-03-05", "okved": "24.52", "industry": "manufacturing", "industry_name": "Производство", "region": "Тула", "employees": 18, "director": "Громов Павел Ильич"},
+      "fns": {"tax_debt": 0, "invalid_info_flag": false, "mass_address_flag": false},
+      "bki": {"active_loans": 3, "closed_loans": 1, "max_overdue_days_12m": 5, "overdue_count_12m": 1, "inquiries_6m": 2}
+    },
+    {
+      "inn": "7702000010",
+      "_scenario": "10. Оценка моделью: высокий риск — ООО «Чистый дом», 930 тыс. ₽, 48 мес, рефинансирование, PD модели ≈ 21%",
+      "egrul": {"ogrn": "1237700000100", "name": "ООО «Чистый дом»", "legal_form": "OOO", "status": "active", "registration_date": "2023-06-15", "okved": "81.21", "industry": "services", "industry_name": "Услуги", "region": "Пермь", "employees": 14, "director": "Лебедева Ирина Сергеевна"},
+      "fns": {"tax_debt": 0, "invalid_info_flag": false, "mass_address_flag": false},
+      "bki": {"active_loans": 2, "closed_loans": 2, "max_overdue_days_12m": 9, "overdue_count_12m": 2, "inquiries_6m": 2}
     }
   ]
 }
