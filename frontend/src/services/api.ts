@@ -175,3 +175,17 @@ export async function uploadDocument(inn: string, docId: string, file: File) {
 export async function getDocuments(inn: string) {
   return JSON.parse(localStorage.getItem(`docs_${inn}`) || '{}');
 }
+
+// === АВТОЗАПОЛНЕНИЕ ПО ИНН ===
+export async function autofillCompanyByInn(inn: string) {
+  const res = await fetch(`${API_URL}/applications/autofill/${inn}`);
+
+  if (res.status === 404) {
+    throw new Error('Компания с таким ИНН не найдена');
+  }
+  if (!res.ok) {
+    throw new Error('Ошибка при получении данных из ЕГРЮЛ');
+  }
+
+  return res.json();
+}

@@ -7,7 +7,8 @@ import {
   getApplications,
   getApplicationById,
   uploadDocument,
-  getDocuments
+  getDocuments,
+  autofillCompanyByInn // <--- ИСПРАВЛЕНО: добавлена запятая выше
 } from '../services/api';
 import { recommendProducts } from '../services/recommender';
 import {
@@ -47,7 +48,7 @@ export default function ClientCabinet() {
     businessAgeCategory: 'Более 9 месяцев' as 'До 9 месяцев' | 'Более 9 месяцев',
     amount: 1000000,
     termYears: 2,
-    purpose: 'working_capital' // <--- ДОБАВЛЕНО ПОЛЕ ЦЕЛИ
+    purpose: 'working_capital'
   });
 
   // Стейты для рекомендаций
@@ -67,9 +68,11 @@ export default function ClientCabinet() {
     phone: '+7 (999) 123-45-67',
     email: 'ivan@romashka.ru',
     address: 'г. Москва, ул. Тверская, д. 1',
-    okved: '47.11 Торговля розничная'
+    okved: '47.11 Торговля розничная', // <--- ИСПРАВЛЕНО: добавлена запятая
+    businessAgeMonths: 24
   });
   const [result, setResult] = useState<any>(null);
+  const [isAutofilling, setIsAutofilling] = useState(false);
 
   // Загрузка заявок и документов при монтировании
   useEffect(() => {
@@ -134,6 +137,43 @@ export default function ClientCabinet() {
     return () => clearInterval(interval);
   }, [viewingApp, setApps]);
 
+  // АВТОЗАПОЛНЕНИЕ ПО ИНН
+  useEffect(() => {
+    // Ищем только если ИНН валидной длины (10 для ООО, 12 для ИП)
+    if (formData.inn.length !== 10 && formData.inn.length !== 12) return;
+
+    let isMounted = true;
+    const timer = setTimeout(async () => {
+      setIsAutofilling(true);
+      try {
+        const data = await autofillCompanyByInn(formData.inn);
+        if (isMounted && data) {
+          setFormData(prev => ({
+            ...prev,
+            companyName: data.name || data.company_name || prev.companyName,
+            ogrn: data.ogrn || prev.ogrn,
+            region: data.region || prev.region,
+            director: data.director || prev.director,
+            okved: data.industry_name || data.industry || prev.okved,
+            businessAgeMonths: data.business_age_months || 24,
+          }));
+          toast.success('Данные компании подгружены из ЕГРЮЛ');
+        }
+      } catch (error: any) {
+        if (isMounted) {
+          toast.error(error.message || 'Не удалось найти компанию по ИНН');
+        }
+      } finally {
+        if (isMounted) setIsAutofilling(false);
+      }
+    }, 500); // Ждем полсекунды после окончания ввода
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [formData.inn]);
+
   // Сброс шагов подписания при открытии другой заявки
   useEffect(() => {
     setSignStep('offer');
@@ -153,7 +193,8 @@ export default function ClientCabinet() {
         ...formData,
         ...calcParams,
         term: calcParams.termYears * 12,
-        productId: selectedProduct?.product?.id // <--- ПЕРЕДАЕМ ID ПРОДУКТА
+        productId: selectedProduct?.product?.id, // <--- ИСПРАВЛЕНО: добавлена запятая
+        businessAgeMonths: formData.businessAgeMonths
       });
       toast.success('Черновик сохранен на сервере!');
       await loadData();
@@ -176,7 +217,8 @@ export default function ClientCabinet() {
         ...formData,
         ...calcParams,
         term: calcParams.termYears * 12,
-        productId: selectedProduct?.product?.id // <--- ПЕРЕДАЕМ ID ПРОДУКТА
+        productId: selectedProduct?.product?.id, // <--- ИСПРАВЛЕНО: добавлена запятая
+        businessAgeMonths: formData.businessAgeMonths
       });
       const submitted = await submitApplication(draft.id);
       setResult(submitted);
@@ -732,7 +774,6 @@ export default function ClientCabinet() {
       <div className="flex flex-col lg:flex-row gap-8">
         <div className="w-full lg:w-[380px] shrink-0 space-y-8">
 
-          {/* ЦЕЛЬ КРЕДИТА (ДОБАВЛЕНО) */}
           <div>
             <p className="text-sm text-slate-500 mb-3">Цель кредита</p>
             <select
@@ -809,7 +850,6 @@ export default function ClientCabinet() {
                     <div>
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="text-xl font-extrabold text-slate-900">{rec.product.name}</h3>
-                        {/* ВЫВОДИМ МЕТКУ ОТ БЭКЕНДА */}
                         {rec.product.label && (
                           <Badge variant={idx === 0 ? 'warning' : idx === 1 ? 'info' : 'default'}>
                             {rec.product.label}
@@ -818,7 +858,6 @@ export default function ClientCabinet() {
                       </div>
                       <p className="text-slate-500 text-sm">{rec.product.desc}</p>
 
-                      {/* ВЫВОДИМ ПРИЧИНЫ ОТ БЭКЕНДА */}
                       {rec.product.reasons && rec.product.reasons.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-2">
                           {rec.product.reasons.map((reason: string, i: number) => (
@@ -891,7 +930,23 @@ export default function ClientCabinet() {
             <h3 className="text-xl font-bold mb-6">Данные о компании</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div><label className="text-sm text-slate-500 mb-1 block">Название</label><input value={formData.companyName} onChange={e => setFormData({...formData, companyName: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
-              <div><label className="text-sm text-slate-500 mb-1 block">ИНН</label><input value={formData.inn} onChange={e => setFormData({...formData, inn: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none" placeholder="Начните с 000 для отказа"/></div>
+              <div>
+                <label className="text-sm text-slate-500 mb-1 block">ИНН</label>
+                <div className="relative">
+                  <input
+                    value={formData.inn}
+                    onChange={e => setFormData({...formData, inn: e.target.value})}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none pr-10"
+                    placeholder="Введите ИНН"
+                  />
+                  {isAutofilling && (
+                    <div className="absolute right-3 top-3.5">
+                      <div className="w-5 h-5 border-2 border-alfa border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">Данные компании подтянутся автоматически</p>
+              </div>
               <div><label className="text-sm text-slate-500 mb-1 block">ОГРН</label><input value={formData.ogrn} onChange={e => setFormData({...formData, ogrn: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
               <div><label className="text-sm text-slate-500 mb-1 block">Регион</label><input value={formData.region} onChange={e => setFormData({...formData, region: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
             </div>
