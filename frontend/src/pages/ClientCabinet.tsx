@@ -62,9 +62,9 @@ export default function ClientCabinet() {
     ogrn: '1234567890123',
     companyName: 'ООО «Ромашка»',
     region: 'Москва',
-    revenue: 50000000,
-    profit: 3500000,
-    liabilities: 2000000,
+    revenue: '',
+    profit: '',
+    liabilities: '',
     director: 'Иванов Иван Иванович',
     phone: '+7 (999) 123-45-67',
     email: 'ivan@romashka.ru',
@@ -72,8 +72,9 @@ export default function ClientCabinet() {
     okved: '47.11 Торговля розничная',
     businessAgeMonths: 24,
     employeesCount: 0,
-    monthlyTurnover: 5000000,
-    monthlyExpenses: 3500000
+    monthlyTurnover: '',
+    monthlyExpenses: '',
+    monthlyDebtPayments: ''
   });
   const [result, setResult] = useState<any>(null);
   const [isAutofilling, setIsAutofilling] = useState(false);
@@ -969,12 +970,13 @@ export default function ClientCabinet() {
           <>
             <h3 className="text-xl font-bold mb-6">Финансовые показатели</h3>
             <div className="space-y-4">
-              <div><label className="text-sm text-slate-500 mb-1 block">Выручка (₽)</label><input type="number" value={formData.revenue} onChange={e => setFormData({...formData, revenue: Number(e.target.value)})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
-              <div><label className="text-sm text-slate-500 mb-1 block">Чистая прибыль (₽)</label><input type="number" value={formData.profit} onChange={e => setFormData({...formData, profit: Number(e.target.value)})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
-              <div><label className="text-sm text-slate-500 mb-1 block">Кредитные обязательства (₽)</label><input type="number" value={formData.liabilities} onChange={e => setFormData({...formData, liabilities: Number(e.target.value)})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
+              <div><label className="text-sm text-slate-500 mb-1 block">Выручка (₽)</label><input type="number" value={formData.revenue} onChange={e => setFormData({...formData, revenue: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
+              <div><label className="text-sm text-slate-500 mb-1 block">Чистая прибыль (₽)</label><input type="number" value={formData.profit} onChange={e => setFormData({...formData, profit: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
+              <div><label className="text-sm text-slate-500 mb-1 block">Кредитные обязательства (₽)</label><input type="number" value={formData.liabilities} onChange={e => setFormData({...formData, liabilities: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
+              <div><label className="text-sm text-slate-500 mb-1 block">Платежи по кредитам в месяц (₽)</label><input type="number" value={formData.monthlyDebtPayments} onChange={e => setFormData({...formData, monthlyDebtPayments: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
 
-              <div><label className="text-sm text-slate-500 mb-1 block">Оборот в месяц (₽)</label><input type="number" value={formData.monthlyTurnover} onChange={e => setFormData({...formData, monthlyTurnover: Number(e.target.value)})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
-              <div><label className="text-sm text-slate-500 mb-1 block">Расходы в месяц (₽)</label><input type="number" value={formData.monthlyExpenses} onChange={e => setFormData({...formData, monthlyExpenses: Number(e.target.value)})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
+              <div><label className="text-sm text-slate-500 mb-1 block">Оборот в месяц (₽)</label><input type="number" value={formData.monthlyTurnover} onChange={e => setFormData({...formData, monthlyTurnover: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
+              <div><label className="text-sm text-slate-500 mb-1 block">Расходы в месяц (₽)</label><input type="number" value={formData.monthlyExpenses} onChange={e => setFormData({...formData, monthlyExpenses: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none"/></div>
 
             </div>
             <div className="flex gap-4 mt-8"><Button variant="outline" onClick={() => setStep(2)}>Назад</Button><Button className="flex-1" onClick={() => setStep(4)}>Далее</Button></div>
